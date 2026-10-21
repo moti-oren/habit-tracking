@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { implementationFactories, NOW } from '../../harness/impls.js';
 
 vi.useFakeTimers({ now: NOW });
-const FACTORIES = await implementationFactories();
+const FACTORIES = await implementationFactories(['store/store', 'store/sample-habits']);
 
 const KEYS = {
     habits: 'habit_tracker_he_v2',

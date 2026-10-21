@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { implementations, NOW, setNow } from '../../harness/impls.js';
 
 vi.useFakeTimers({ now: NOW });
-const IMPLS = await implementations();
+const IMPLS = await implementations(['core/dates', 'core/time', 'core/format', 'ui/dom/html']);
 
 describe.each(IMPLS)('dates (%s)', (_, impl) => {
     afterEach(() => vi.setSystemTime(NOW));

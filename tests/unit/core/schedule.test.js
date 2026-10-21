@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { implementations, NOW } from '../../harness/impls.js';
 
 vi.useFakeTimers({ now: NOW });
-const IMPLS = await implementations();
+const IMPLS = await implementations(['core/schedule', 'core/habit']);
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 const NO_TIMES = { time: '', dayTimes: null, slotTimes: null, duration: 0 };
 

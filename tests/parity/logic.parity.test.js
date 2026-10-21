@@ -9,7 +9,20 @@ import { makeGenerator } from '../harness/generators.js';
 import { NOW } from '../harness/impls.js';
 
 vi.useFakeTimers({ now: NOW });
-const HAS_MODERN = !!(await loadModern());
+// all the modules the comparisons below call into
+const MODULES = [
+    'core/dates',
+    'core/time',
+    'core/schedule',
+    'core/habit',
+    'core/stats',
+    'core/format',
+    'core/analytics-range',
+    'store/store',
+    'store/sample-habits',
+    'store/selectors'
+];
+const HAS_MODERN = !!(await loadModern({ modules: MODULES }));
 const SEEDS = [1, 2, 3, 4, 5, 6, 7, 8];
 const HABITS_PER_SEED = 120;
 const TODAYS = [
@@ -42,7 +55,7 @@ describe.skipIf(!HAS_MODERN)('logic parity on random data', () => {
         const raw = JSON.stringify(gen.habits(HABITS_PER_SEED));
         const cats = JSON.stringify(gen.categories());
         const results = [];
-        for (const create of [() => loadLegacy(), () => loadModern({ fresh: true })]) {
+        for (const create of [() => loadLegacy(), () => loadModern({ fresh: true, modules: MODULES })]) {
             vi.setSystemTime(NOW);
             localStorage.clear();
             localStorage.setItem('habit_tracker_he_v2', raw);
@@ -75,7 +88,7 @@ describe.skipIf(!HAS_MODERN)('logic parity on random data', () => {
             return impl;
         };
         const legacy = await load(() => loadLegacy());
-        const modern = await load(() => loadModern({ fresh: true }));
+        const modern = await load(() => loadModern({ fresh: true, modules: MODULES }));
         const mismatches = [];
         const same = (label, fn) => {
             const [a, b] = both(legacy, modern, fn);
@@ -163,7 +176,7 @@ describe.skipIf(!HAS_MODERN)('logic parity on random data', () => {
     it.each(SEEDS)('seed %i: schedule normalization of random raw definitions', seed => {
         const gen = makeGenerator(seed * 1000);
         const legacy = loadLegacy();
-        return loadModern({ fresh: true }).then(modern => {
+        return loadModern({ fresh: true, modules: MODULES }).then(modern => {
             for (let i = 0; i < 400; i++) {
                 const def = gen.scheduleFields();
                 const [a, b] = both(legacy, modern, impl => impl.normalizeScheduleFields(structuredClone(def)));

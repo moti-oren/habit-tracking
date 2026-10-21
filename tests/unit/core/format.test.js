@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { implementations, NOW, setNow } from '../../harness/impls.js';
 
 vi.useFakeTimers({ now: NOW });
-const IMPLS = await implementations();
+const IMPLS = await implementations(['core/format', 'core/analytics-range', 'core/schedule', 'core/habit']);
 const iso = s => `⁦${s}⁩`;
 
 describe.each(IMPLS)('formatting (%s)', (_, impl) => {

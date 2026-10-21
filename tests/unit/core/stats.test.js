@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { implementations, NOW, setNow } from '../../harness/impls.js';
 
 vi.useFakeTimers({ now: NOW });
-const IMPLS = await implementations();
+const IMPLS = await implementations(['core/stats', 'core/format']);
 
 const marks = (...keys) => Object.fromEntries(keys.map(k => [k, true]));
 const oct = (...days) => days.map(d => `2026-10-${String(d).padStart(2, '0')}`);
@@ -85,7 +85,7 @@ describe.each(IMPLS)('statistics (%s)', (_, impl) => {
     });
 
     describe('current streak', () => {
-        const streak = h => impl.calculateStreak(h);
+        const streak = h => impl.computeStreak(h);
 
         it('counts consecutive done days, today included when done', () => {
             expect(streak(mk({ history: marks(...oct(21, 20, 19)) }))).toBe(3);
@@ -123,13 +123,6 @@ describe.each(IMPLS)('statistics (%s)', (_, impl) => {
             expect(streak(met)).toBe(2);
         });
 
-        it('builds the streak labels', () => {
-            const h = mk({ history: marks(...oct(21, 20)) });
-            expect(impl.getHabitStreakText(h)).toBe('רצף 2 ימים');
-            expect(impl.getHabitStreakLongText(h)).toBe('רצף של 2 ימים');
-            expect(impl.getHabitStreakText(mk({}))).toBe('');
-        });
-
         it('caps the current streak at 365 days', () => {
             const keys = Array.from({ length: 500 }, (_, i) => impl.getDateKeyDaysAgo(i));
             expect(streak(mk({ startDate: '2020-01-01', history: marks(...keys) }))).toBe(365);
@@ -137,7 +130,7 @@ describe.each(IMPLS)('statistics (%s)', (_, impl) => {
     });
 
     describe('best streak', () => {
-        const best = h => impl.calculateBestStreak(h);
+        const best = h => impl.computeBestStreak(h);
 
         it('finds the longest run of due days', () => {
             const h = mk({
@@ -177,7 +170,7 @@ describe.each(IMPLS)('statistics (%s)', (_, impl) => {
     });
 
     describe('progress over a range', () => {
-        const progress = (h, a, b, elapsedOnly) => impl.getHabitRangeProgress(h, range(a, b), elapsedOnly);
+        const progress = (h, a, b, elapsedOnly) => impl.computeHabitRangeProgress(h, range(a, b), elapsedOnly);
 
         it('counts due days, optionally only the elapsed ones', () => {
             const h = mk({ history: marks(...oct(18, 20, 21)) });
@@ -212,7 +205,7 @@ describe.each(IMPLS)('statistics (%s)', (_, impl) => {
         });
 
         it('returns an empty result for no days', () => {
-            expect(impl.getHabitRangeProgress(mk({}), [], true)).toEqual({ target: 0, done: 0 });
+            expect(impl.computeHabitRangeProgress(mk({}), [], true)).toEqual({ target: 0, done: 0 });
         });
     });
 });

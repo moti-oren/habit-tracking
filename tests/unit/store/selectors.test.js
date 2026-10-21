@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { implementationFactories, NOW, setNow } from '../../harness/impls.js';
 
 vi.useFakeTimers({ now: NOW });
-const FACTORIES = await implementationFactories();
+const FACTORIES = await implementationFactories(['store/selectors', 'store/store']);
 
 describe.each(FACTORIES)('selectors (%s)', (_, create) => {
     let impl;
@@ -102,6 +102,15 @@ describe.each(FACTORIES)('selectors (%s)', (_, create) => {
         expect(impl.findTimeOverlaps(def, '')).toBe(r1);
         Store.archiveHabits(['a'], '2026-10-21', '2026-10-22');
         expect(impl.findTimeOverlaps(def, '').map(o => o.h.id)).toEqual(['b']);
+    });
+
+    it('builds the streak labels from the memoized streak', () => {
+        const h = Store.find('a');
+        Store.toggleDay('a', '2026-10-21');
+        expect(impl.getHabitStreakText(Store.find('a'))).toBe('רצף 2 ימים');
+        expect(impl.getHabitStreakLongText(Store.find('a'))).toBe('רצף של 2 ימים');
+        expect(impl.getHabitStreakText(Store.find('b'))).toBe('');
+        expect(h).toBeTruthy();
     });
 
     it('lists live habits through the Store', () => {

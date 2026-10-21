@@ -2,14 +2,14 @@
 //
 // Usage at the top of a test file (jsdom environment):
 //   vi.useFakeTimers({ now: NOW });
-//   const IMPLS = await implementations();
+//   const IMPLS = await implementations(['core/dates']); // the src modules the suite needs
 //   describe.each(IMPLS)('%s', (name, impl) => { ... });
 import { loadLegacy } from './legacy.js';
 import { loadModern } from './modern.js';
 
-export async function implementations() {
+export async function implementations(modules) {
     const list = [['original', loadLegacy()]];
-    const modern = await loadModern();
+    const modern = await loadModern({ modules });
     if (modern) list.push(['refactored', modern]);
     return list;
 }
@@ -18,9 +18,9 @@ export async function implementations() {
  * Factories that build a FRESH instance per call (new closure / new module instances), for suites
  * that need a clean Store, clean caches or a clean localStorage view.
  */
-export async function implementationFactories() {
+export async function implementationFactories(modules) {
     const list = [['original', async () => loadLegacy()]];
-    if (await loadModern()) list.push(['refactored', async () => loadModern({ fresh: true })]);
+    if (await loadModern({ modules })) list.push(['refactored', async () => loadModern({ fresh: true, modules })]);
     return list;
 }
 

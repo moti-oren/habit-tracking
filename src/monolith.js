@@ -2,87 +2,19 @@
 // module scope makes redundant). It is split into modules step by step; see docs/REFACTOR_PLAN.md.
 /* eslint-disable no-unused-vars -- dead locals are removed when each area is extracted */
 
-const STORAGE_KEY = 'habit_tracker_he_v2';
-const CATEGORIES_STORAGE_KEY = 'habit_tracker_categories_he_v2';
-const PREFS_STORAGE_KEY = 'habit_tracker_prefs_he_v2';
-const DEFAULT_CATEGORIES = ['כושר', 'בריאות', 'למידה', 'פוקוס', 'מיינדפולנס'];
-
-const ICON_OPTIONS = [
-    { id: 'barbell', emoji: '🏋️', label: 'אימון כוח' },
-    { id: 'music', emoji: '🎸', label: 'נגינה' },
-    { id: 'drop', emoji: '💧', label: 'שתייה' },
-    { id: 'book', emoji: '📚', label: 'קריאה' },
-    { id: 'run', emoji: '🏃', label: 'ריצה' },
-    { id: 'lotus', emoji: '🧘', label: 'מיינדפולנס' },
-    { id: 'code', emoji: '💻', label: 'פוקוס' },
-    { id: 'salad', emoji: '🥗', label: 'תזונה' },
-    { id: 'moon', emoji: '😴', label: 'שינה' },
-    { id: 'pencil', emoji: '✍️', label: 'כתיבה' },
-    { id: 'pill', emoji: '💊', label: 'ויטמינים' },
-    { id: 'plant', emoji: '🌱', label: 'צמיחה' }
-];
-
-// Habit colours are for identity only. Green (success), amber-on-white banners (warning)
-// and rose (danger) stay reserved for status. Solid fills use the 600 shade so white
-// check marks keep at least 3:1 contrast.
-const COLOR_OPTIONS = [
-    {
-        id: 'indigo',
-        name: 'אינדיגו',
-        bg: 'bg-indigo-600',
-        softBg: 'bg-indigo-500/15',
-        text: 'text-indigo-600 dark:text-indigo-400',
-        border: 'border-indigo-500',
-        hex: '#4f46e5'
-    },
-    {
-        id: 'teal',
-        name: 'טורקיז',
-        bg: 'bg-teal-600',
-        softBg: 'bg-teal-500/15',
-        text: 'text-teal-700 dark:text-teal-400',
-        border: 'border-teal-500',
-        hex: '#0d9488'
-    },
-    {
-        id: 'orange',
-        name: 'כתום',
-        bg: 'bg-orange-600',
-        softBg: 'bg-orange-500/15',
-        text: 'text-orange-700 dark:text-orange-400',
-        border: 'border-orange-500',
-        hex: '#ea580c'
-    },
-    {
-        id: 'pink',
-        name: 'ורוד',
-        bg: 'bg-pink-600',
-        softBg: 'bg-pink-500/15',
-        text: 'text-pink-700 dark:text-pink-400',
-        border: 'border-pink-500',
-        hex: '#db2777'
-    },
-    {
-        id: 'sky',
-        name: 'תכלת',
-        bg: 'bg-sky-600',
-        softBg: 'bg-sky-500/15',
-        text: 'text-sky-700 dark:text-sky-400',
-        border: 'border-sky-500',
-        hex: '#0284c7'
-    },
-    {
-        id: 'purple',
-        name: 'סגול',
-        bg: 'bg-purple-600',
-        softBg: 'bg-purple-500/15',
-        text: 'text-purple-700 dark:text-purple-400',
-        border: 'border-purple-500',
-        hex: '#9333ea'
-    }
-];
-// Habits saved with the old palette keep a similar hue
-const COLOR_MIGRATION = { emerald: 'teal', rose: 'pink', cyan: 'sky', amber: 'orange' };
+import { ANALYTICS_PRESETS, MAX_RANGE_DAYS } from './config/analytics.js';
+import { DEFAULT_CATEGORIES, UNCATEGORIZED_LABEL } from './config/categories.js';
+import { COLOR_MIGRATION, COLOR_OPTIONS, getColorMeta } from './config/colors.js';
+import {
+    HEBREW_DAYS_FULL,
+    HEBREW_DAYS_SHORT,
+    HEBREW_MONTHS,
+    HEBREW_MONTHS_FULL,
+    HEBREW_MONTHS_SHORT
+} from './config/hebrew.js';
+import { ICON_OPTIONS, MORE_ICONS } from './config/icons.js';
+import { DAY_PARTS, MAX_SLOTS, TIME_RE } from './config/schedule.js';
+import { CATEGORIES_STORAGE_KEY, PREFS_STORAGE_KEY, STORAGE_KEY } from './config/storage-keys.js';
 
 // One icon language for the whole UI: 24px stroke SVGs (emoji are kept only for habit icons)
 const ICON_PATHS = {
@@ -96,24 +28,6 @@ const ICON_PATHS = {
 function icon(name, cls = 'w-4 h-4', strokeWidth = 2.5) {
     return `<svg class="${cls} shrink-0 inline-block" fill="none" stroke="currentColor" stroke-width="${strokeWidth}" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="${ICON_PATHS[name]}"/></svg>`;
 }
-
-const HEBREW_DAYS_SHORT = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
-const HEBREW_DAYS_FULL = ['יום א׳', 'יום ב׳', 'יום ג׳', 'יום ד׳', 'יום ה׳', 'יום ו׳', 'שבת'];
-const HEBREW_MONTHS = ['ינו׳', 'פבר׳', 'מרץ', 'אפר׳', 'מאי', 'יוני', 'יולי', 'אוג׳', 'ספט׳', 'אוק׳', 'נוב׳', 'דצמ׳'];
-const HEBREW_MONTHS_FULL = [
-    'ינואר',
-    'פברואר',
-    'מרץ',
-    'אפריל',
-    'מאי',
-    'יוני',
-    'יולי',
-    'אוגוסט',
-    'ספטמבר',
-    'אוקטובר',
-    'נובמבר',
-    'דצמבר'
-];
 
 let soundEnabled = true;
 const systemDarkQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
@@ -423,14 +337,6 @@ function isFutureDateKey(dateKey) {
     return dateKey > todayKey;
 }
 
-// ===== Scheduling: goal type, days, time — with history =====
-// Each habit keeps `schedule`: versions { from, goalType, fixedDays, weeklyGoal, time, duration },
-// sorted by `from` (the first version has from: null = "from the start"). Every past day is
-// measured by the version in force on that day. The top-level fields always mirror the last version.
-const SCHEDULE_FIELDS = ['goalType', 'fixedDays', 'weeklyGoal', 'time', 'duration', 'dayTimes', 'slotTimes'];
-const MAX_SLOTS = 4;
-const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
-
 // Normalizes the scheduling fields of a habit or of a schedule version (in place)
 function normalizeScheduleFields(obj) {
     if (!obj.goalType) {
@@ -676,11 +582,6 @@ function timeBlock(time, duration) {
     const start = timeToMinutes(time);
     return [start, start + Math.max(1, duration || 0)];
 }
-const DAY_PARTS = [
-    { id: 'morning', label: 'בוקר', inLabel: 'בבוקר', until: 12 * 60 },
-    { id: 'noon', label: 'צהריים', inLabel: 'בצהריים', until: 17 * 60 },
-    { id: 'evening', label: 'ערב', inLabel: 'בערב', until: 24 * 60 }
-];
 function dayPartOf(time) {
     const m = timeToMinutes(time);
     return DAY_PARTS.find(p => m < p.until);
@@ -1455,8 +1356,6 @@ function loadState() {
     Store.load(getDefaultHabits);
 }
 
-const UNCATEGORIZED_LABEL = 'ללא קטגוריה';
-
 // Habits and categories are always kept in alphabetical (Hebrew) order by name (a Store invariant).
 const nameCollator = new Intl.Collator('he', { sensitivity: 'base', numeric: true });
 const compareByName = (a, b) => nameCollator.compare(String(a), String(b));
@@ -1918,10 +1817,6 @@ function computeDayStats(dayObj, habitList) {
     const pct = totalScheduled > 0 ? Math.min(100, Math.round((doneScheduled / totalScheduled) * 100)) : 0;
     const allDone = totalScheduled > 0 && doneScheduled >= totalScheduled;
     return { totalScheduled, doneScheduled, extraDone: bonusDone, bonusDone, totalDone, pct, allDone };
-}
-
-function getColorMeta(colorId) {
-    return COLOR_OPTIONS.find(c => c.id === colorId) || COLOR_OPTIONS[0];
 }
 
 function switchMainSection(section) {
@@ -2658,15 +2553,6 @@ function renderTrackerSummary() {
     }
 }
 
-// ===== Analytics: date range =====
-const ANALYTICS_PRESETS = [
-    { id: 'week', label: 'השבוע' },
-    { id: '7d', label: '7 ימים' },
-    { id: '30d', label: '30 יום' },
-    { id: 'month', label: 'החודש' },
-    { id: 'custom', label: 'טווח מותאם' }
-];
-const MAX_RANGE_DAYS = 366;
 let analyticsRangeState = { preset: 'week', start: null, end: null };
 
 // A fresh (mutable) Date for callers that need one; hot paths use day numbers instead
@@ -5827,97 +5713,6 @@ function renderFixedDaysPicker() {
     );
 }
 
-const MORE_ICONS = [
-    '🏃‍♀️',
-    '🚴',
-    '🏊',
-    '🧗',
-    '⚽',
-    '🏀',
-    '🎾',
-    '🥋',
-    '🧘‍♀️',
-    '🤸',
-    '🚶',
-    '🏋️',
-    '🥗',
-    '🍎',
-    '🥦',
-    '🍳',
-    '☕',
-    '🍵',
-    '🚭',
-    '🍷',
-    '🛌',
-    '😴',
-    '🦷',
-    '🧴',
-    '🚿',
-    '🧼',
-    '💊',
-    '🩺',
-    '🧠',
-    '❤️',
-    '🌱',
-    '🌿',
-    '🌞',
-    '🌙',
-    '⭐',
-    '🔥',
-    '💡',
-    '📖',
-    '📝',
-    '✍️',
-    '📚',
-    '🎓',
-    '💻',
-    '📱',
-    '📵',
-    '🎧',
-    '🎹',
-    '🎨',
-    '📷',
-    '🎬',
-    '🧩',
-    '♟️',
-    '🗣️',
-    '🌍',
-    '💬',
-    '📞',
-    '👨‍👩‍👧',
-    '🐕',
-    '🐈',
-    '🧹',
-    '🧺',
-    '🍽️',
-    '🛒',
-    '💰',
-    '📊',
-    '🗓️',
-    '⏰',
-    '🎯',
-    '🏆',
-    '🙏',
-    '🕯️',
-    '🌊',
-    '⛰️',
-    '🚗',
-    '✈️',
-    '🔧',
-    '🧵',
-    '🪴',
-    '🎮',
-    '🎲',
-    '🎤',
-    '😊',
-    '😎',
-    '💪',
-    '👍',
-    '✅',
-    '🔔',
-    '🧘'
-];
-
 function getGraphemes(text) {
     const str = String(text || '').trim();
     if (!str) return [];
@@ -6893,20 +6688,6 @@ function formatDateTriggerLabel(key) {
     return `${prefix}${HEBREW_DAYS_FULL[dt.getDay()]}, ${d} ב${HEBREW_MONTHS_FULL[m - 1]}${yearSuffix}`;
 }
 
-const HEBREW_MONTHS_SHORT = [
-    'ינו׳',
-    'פבר׳',
-    'מרץ',
-    'אפר׳',
-    'מאי',
-    'יוני',
-    'יולי',
-    'אוג׳',
-    'ספט׳',
-    'אוק׳',
-    'נוב׳',
-    'דצמ׳'
-];
 function formatDateCompactLabel(key) {
     if (!isValidDateKey(key)) return '';
     const [y, m, d] = key.split('-').map(Number);

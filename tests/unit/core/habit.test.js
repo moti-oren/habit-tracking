@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { implementations, NOW } from '../../harness/impls.js';
 
 vi.useFakeTimers({ now: NOW });
-const IMPLS = await implementations();
+const IMPLS = await implementations(['core/habit', 'core/dates']);
 
 describe.each(IMPLS)('normalizeHabitGoal (%s)', (_, impl) => {
     const norm = h => impl.normalizeHabitGoal({ id: 'h', name: 'n', ...h });
