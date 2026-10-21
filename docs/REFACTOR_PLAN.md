@@ -1,6 +1,7 @@
 # Refactor plan: `legacy/habit_tracker_dashboard.html` → modular Vite project
 
-Status: **draft, waiting for approval.** No code has been written.
+Status: **approved and carried out.** This is the plan as approved, kept for reference; what was
+actually done, and where it differs, is in [REFACTOR_NOTES.md](../REFACTOR_NOTES.md).
 
 ---
 
