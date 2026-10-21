@@ -9,4 +9,3 @@ package-lock.json
 legacy/
 # Markup must stay byte-identical to the original <body> (whitespace between inline elements renders)
 index.html
-.refactor/

@@ -44,8 +44,7 @@ export default [
             'legacy/**',
             'coverage/**',
             'test-results/**',
-            'playwright-report/**',
-            '.refactor/**'
+            'playwright-report/**'
         ]
     },
     js.configs.recommended,
