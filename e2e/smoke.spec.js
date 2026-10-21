@@ -1,0 +1,147 @@
+// Smoke tests of the production builds in a real browser.
+import { test, expect } from '@playwright/test';
+import {
+    ORIGINAL_URL,
+    PREVIEW_URL,
+    SINGLE_FILE_URL,
+    TIMEZONE,
+    freezeClock,
+    openApp,
+    pick,
+    settle,
+    tap
+} from './helpers.js';
+
+const KEY = {
+    habits: 'habit_tracker_he_v2',
+    categories: 'habit_tracker_categories_he_v2',
+    prefs: 'habit_tracker_prefs_he_v2'
+};
+const stored = (page, key = KEY.habits) => page.evaluate(k => JSON.parse(localStorage.getItem(k)), key);
+
+test.describe('the multi-file build (vite preview)', () => {
+    test('boots without errors, without the Tailwind CDN, and shows the sample habits', async ({ browser }) => {
+        const requests = [];
+        const app = await openApp(browser, PREVIEW_URL);
+        app.page.on('request', r => requests.push(r.url()));
+        await app.page.reload();
+        await settle(app.page, 1500);
+        await expect(app.page.locator('#daySelectorStrip button')).toHaveCount(7);
+        await expect(app.page.locator('[data-action="toggleDay"]')).toHaveCount(5);
+        await expect(app.page.locator('#greetingLabel')).toHaveText('בוקר טוב');
+        expect(requests.some(u => u.includes('cdn.tailwindcss.com'))).toBe(false);
+        expect(app.errors).toEqual([]);
+        await app.context.close();
+    });
+
+    test('checking a habit off completes the day, and undo restores a cleared day', async ({ browser }) => {
+        const { context, page, errors } = await openApp(browser, PREVIEW_URL);
+        await tap(page, '[data-action="toggleDay"][data-id="h5"]');
+        await expect(page.locator('#toastMessage')).toHaveText('כל היעדים להיום הושלמו. כל הכבוד!');
+        expect((await stored(page)).find(h => h.id === 'h5').history['2026-10-21']).toBe(true);
+        await tap(page, '[data-action="toggleMenu"][data-arg="trackerActionsMenu"]');
+        await tap(page, '#clearAllBtn');
+        expect((await stored(page)).find(h => h.id === 'h5').history['2026-10-21']).toBe(false);
+        await tap(page, '#toastUndoBtn');
+        await expect(page.locator('#toastMessage')).toHaveText('הפעולה בוטלה והמצב הקודם שוחזר');
+        expect((await stored(page)).find(h => h.id === 'h5').history['2026-10-21']).toBe(true);
+        expect(errors).toEqual([]);
+        await context.close();
+    });
+
+    test('a new habit from the form appears in manage and in the tracker', async ({ browser }) => {
+        const { context, page, errors } = await openApp(browser, PREVIEW_URL);
+        await tap(page, '[data-action="switchSection"][data-arg="manage"]');
+        await tap(page, '#section_manage [data-action="newHabit"][aria-label]');
+        await page.locator('#habitNameInput').fill('מדיטציה');
+        await settle(page);
+        await tap(page, '#habitTimeToggle');
+        await tap(page, '#habitTimeHour_trigger');
+        await pick(page, '07');
+        await tap(page, '#saveHabitBtn');
+        await expect(page.locator('#toastMessage')).toHaveText('הרגל חדש נוסף למערכת!');
+        await expect(page.locator('#manageHabitsGrid')).toContainText('מדיטציה');
+        await tap(page, '[data-action="switchSection"][data-arg="tracker"]');
+        await expect(page.locator('#habitsListContainer')).toContainText('מדיטציה');
+        await expect(page.locator('#habitsListContainer h3', { hasText: 'בוקר' }).first()).toBeVisible();
+        expect((await stored(page)).find(h => h.name === 'מדיטציה').time).toBe('07:00');
+        expect(errors).toEqual([]);
+        await context.close();
+    });
+
+    test('analytics draws its charts for every preset', async ({ browser }) => {
+        const { context, page, errors } = await openApp(browser, PREVIEW_URL);
+        await tap(page, '[data-action="switchSection"][data-arg="analytics"]');
+        await expect(page.locator('#weeklyBarChart [data-bar-track]')).toHaveCount(7);
+        await tap(page, '[data-action="setPreset"][data-arg="30d"]');
+        await expect(page.locator('#lineChartWrap svg')).toBeVisible();
+        await tap(page, '[data-action="setPreset"][data-arg="7d"]');
+        await expect(page.locator('#analyticsRangeLabel')).toHaveText('7 הימים האחרונים');
+        expect(errors).toEqual([]);
+        await context.close();
+    });
+
+    test('the chosen theme is applied before the first paint after a reload', async ({ browser }) => {
+        const { context, page } = await openApp(browser, PREVIEW_URL);
+        await tap(page, '#themeToggleBtn');
+        await page.reload({ waitUntil: 'commit' });
+        // the pre-paint script in <head> runs as soon as it is parsed, before the stylesheet and the app
+        await page.waitForSelector('head > script', { state: 'attached' });
+        expect(await page.evaluate(() => document.documentElement.classList.contains('dark'))).toBe(true);
+        await context.close();
+    });
+
+    test('the hidden sections are drawn in idle time after boot', async ({ browser }) => {
+        const prefs = JSON.stringify({ currentMainSection: 'analytics' });
+        const { context, page } = await openApp(browser, PREVIEW_URL, { storage: { [KEY.prefs]: prefs } });
+        await expect(page.locator('#section_analytics')).toBeVisible();
+        await expect(page.locator('#section_tracker [data-action="toggleDay"]')).toHaveCount(5);
+        await expect(page.locator('#manageHabitsGrid [data-habit-card]')).toHaveCount(5);
+        await context.close();
+    });
+});
+
+test.describe('the single-file build opened from disk', () => {
+    test('shows, and keeps byte for byte, the data the original file saved', async ({ browser }) => {
+        // one context: like one browser, where every file:// page shares localStorage
+        const context = await browser.newContext({ timezoneId: TIMEZONE, viewport: { width: 1280, height: 900 } });
+        const page = await context.newPage();
+        await freezeClock(page);
+        const errors = [];
+        page.on('pageerror', e => errors.push(e.message));
+
+        // the original file: some real use
+        await page.goto(ORIGINAL_URL);
+        await settle(page, 2000);
+        await tap(page, '[data-action="toggleDay"][data-id="h5"]');
+        await tap(page, '[data-action="switchSection"][data-arg="manage"]');
+        await tap(page, '[data-action="openCategories"]');
+        await page.locator('#modalNewCategoryInput').fill('ערב');
+        await tap(page, '[data-action="addCategory"]');
+        await tap(page, '[data-action="closeCategories"]');
+        await tap(page, '[data-action="toggleMenu"][data-arg="habitMenu_h4"]');
+        await tap(page, '[data-action="menuArchive"][data-id="h4"]');
+        await settle(page, 5500); // the undo toast covers the header until it runs out
+        await tap(page, '#themeToggleBtn');
+        await settle(page, 3000);
+        const saved = await page.evaluate(() => ({ ...localStorage }));
+
+        // the new file, in place of the old one
+        await page.goto(SINGLE_FILE_URL);
+        await settle(page, 2000);
+        const after = await page.evaluate(() => ({ ...localStorage }));
+        expect(after[KEY.habits]).toBe(saved[KEY.habits]);
+        expect(after[KEY.categories]).toBe(saved[KEY.categories]);
+        expect(JSON.parse(after[KEY.prefs])).toEqual(JSON.parse(saved[KEY.prefs]));
+        expect(await page.evaluate(() => document.documentElement.classList.contains('dark'))).toBe(true);
+        await expect(page.locator('#section_manage')).toBeVisible();
+        await expect(page.locator('#manageArchiveSection')).toContainText('ארכיון');
+        await expect(page.locator('[data-action="setCategoryFilter"][data-cat="ערב"][data-ctx="manage"]')).toHaveCount(
+            1
+        );
+        await tap(page, '[data-action="switchSection"][data-arg="tracker"]');
+        await expect(page.locator('[data-action="toggleDay"][data-id="h5"]')).toHaveAttribute('aria-pressed', 'true');
+        expect(errors).toEqual([]);
+        await context.close();
+    });
+});
