@@ -5,16 +5,11 @@
 import { ANALYTICS_PRESETS, MAX_RANGE_DAYS } from './config/analytics.js';
 import { DEFAULT_CATEGORIES, UNCATEGORIZED_LABEL } from './config/categories.js';
 import { COLOR_OPTIONS, getColorMeta } from './config/colors.js';
-import {
-    HEBREW_DAYS_FULL,
-    HEBREW_DAYS_SHORT,
-    HEBREW_MONTHS,
-    HEBREW_MONTHS_FULL,
-    HEBREW_MONTHS_SHORT
-} from './config/hebrew.js';
+import { HEBREW_DAYS_FULL, HEBREW_DAYS_SHORT, HEBREW_MONTHS, HEBREW_MONTHS_FULL } from './config/hebrew.js';
 import { ICON_OPTIONS, MORE_ICONS } from './config/icons.js';
 import { DAY_PARTS, MAX_SLOTS } from './config/schedule.js';
 import { CATEGORIES_STORAGE_KEY, PREFS_STORAGE_KEY, STORAGE_KEY } from './config/storage-keys.js';
+import { formatRangeLabel, getPresetRange, getPreviousRangeBounds } from './core/analytics-range.js';
 import {
     addDaysToKey,
     buildDaysForRange,
@@ -22,17 +17,28 @@ import {
     dayObjForKey,
     daysBetweenKeys,
     dowOfDayNum,
-    dowOfKey,
     formatDateKey,
     getDateKeyDaysAgo,
     getWindow7Days,
     isFutureDateKey,
     isValidDateKey,
-    keyOfDayNum,
     parseDateKeyLocal,
     splitDaysIntoWeeks,
     todayDayNum
 } from './core/dates.js';
+import {
+    describeScheduleVersion,
+    formatDateCompactLabel,
+    formatDateTriggerLabel,
+    formatDaySet,
+    formatStartDateLabel,
+    formatWeekRangeText,
+    getGreetingByHour,
+    getHabitGoalLabel,
+    getHabitStreakUnit,
+    habitCountLabel,
+    scheduleTimeSummary
+} from './core/format.js';
 import {
     getEarliestCheckedKey,
     getHabitCategoryDisplay,
@@ -43,6 +49,7 @@ import {
     isSlotDone,
     normalizeHabitGoal
 } from './core/habit.js';
+import { buildOverlapIndex, findOverlapsIn } from './core/overlaps.js';
 import {
     applyScheduleEdit,
     baseHabit,
@@ -51,18 +58,25 @@ import {
     habitOn,
     hasAnyTime,
     isFlexibleOnKey,
-    isHabitScheduledForDateKey,
     isHabitScheduledForDayOfWeek,
     isHabitScheduledOnKey,
     normalizeScheduleFields,
     sameScheduleFields,
     scheduleWeekdays,
-    slotCount,
-    timesOnDay
+    slotCount
 } from './core/schedule.js';
 import { compareByName } from './core/sort.js';
+import {
+    computeBestStreak,
+    computeDayStats,
+    computeHabitRangeProgress,
+    computeStreak,
+    getWeeklyCountForHabit,
+    getWeeklyGoalForHabit
+} from './core/stats.js';
 import { getGraphemes } from './core/text.js';
-import { dayPartOf, formatTimeRange, timeBlock, timeRangeText, timeToMinutes } from './core/time.js';
+import { dayPartOf, timeRangeText, timeToMinutes } from './core/time.js';
+import { escapeHtml, timeRangeHtml } from './ui/dom/html.js';
 
 // One icon language for the whole UI: 24px stroke SVGs (emoji are kept only for habit icons)
 const ICON_PATHS = {
@@ -87,14 +101,6 @@ let currentMainSection = 'tracker'; // 'tracker' | 'analytics' | 'manage'
 let calendarViewYear = new Date().getFullYear();
 let calendarViewMonth = new Date().getMonth();
 let calendarViewMode = 'month'; // 'month' | 'year'
-
-function getGreetingByHour() {
-    const hour = new Date().getHours();
-    if (hour >= 5 && hour < 12) return 'בוקר טוב';
-    if (hour >= 12 && hour < 17) return 'צהריים טובים';
-    if (hour >= 17 && hour < 22) return 'ערב טוב';
-    return 'לילה טוב';
-}
 
 // The audio context is created on the first sound, suspended while the tab is hidden
 // (no audio thread running in the background), and resumed by the next sound.
@@ -277,107 +283,8 @@ function getDefaultHabits() {
     ];
 }
 
-function timeRangeHtml(time, duration, cls = '') {
-    return `<span dir="ltr" class="tabular-nums ${cls}">${formatTimeRange(time, duration)}</span>`;
-}
-
-// [0,1,2,3,4] -> "א׳–ה׳", [0,2,4] -> "א׳, ג׳, ה׳"
-function formatDaySet(days) {
-    const sorted = [...days].sort((a, b) => a - b);
-    const parts = [];
-    for (let i = 0; i < sorted.length; i++) {
-        let j = i;
-        while (j + 1 < sorted.length && sorted[j + 1] === sorted[j] + 1) j++;
-        parts.push(
-            j - i >= 2
-                ? `${HEBREW_DAYS_SHORT[sorted[i]]}–${HEBREW_DAYS_SHORT[sorted[j]]}`
-                : sorted
-                      .slice(i, j + 1)
-                      .map(d => HEBREW_DAYS_SHORT[d])
-                      .join(', ')
-        );
-        i = j;
-    }
-    return parts.join(', ');
-}
-
-// Text summary of the times: "06:00–07:00", or "א׳–ה׳ 06:00–07:00 · ו׳ 09:00–10:00 · ש׳ ללא שעה"
-function scheduleTimeSummary(def) {
-    const n = slotCount(def);
-    const prefix = n > 1 ? `${n} פעמים ביום: ` : '';
-    const fmtRow = row =>
-        row.every(t => !t) ? 'ללא שעה' : row.map(t => (t ? timeRangeText(t, def.duration) : 'ללא שעה')).join(', ');
-    if (def.dayTimes) {
-        const groups = [];
-        scheduleWeekdays(def).forEach(d => {
-            const row = dayTimesRow(def, d);
-            const key = row.join('|');
-            const g = groups.find(x => x.key === key);
-            if (g) g.days.push(d);
-            else groups.push({ key, row, days: [d] });
-        });
-        return prefix + groups.map(g => `${formatDaySet(g.days)} ${fmtRow(g.row)}`).join(' · ');
-    }
-    if (def.slotTimes) return prefix + fmtRow(def.slotTimes);
-    return def.time ? timeRangeText(def.time, def.duration) : '';
-}
-
 function getLiveHabits() {
     return Store.liveHabits();
-}
-
-// Weekly target for the given week, counting only the days the habit was active
-// (a habit that started or was archived mid-week owes only its share)
-function getWeeklyGoalForHabit(habit, days = weekDays) {
-    habit = baseHabit(habit);
-    const activeDays = days.filter(d => isHabitActiveOnKey(habit, d.key));
-    if (!Array.isArray(habit.schedule) || habit.schedule.length <= 1) {
-        const full = Number(habit.weeklyGoal) || 7;
-        if (activeDays.length >= days.length) return full;
-        if (habit.goalType === 'flexible') {
-            return activeDays.length === 0 ? 0 : Math.max(1, Math.ceil((full * activeDays.length) / 7));
-        }
-        return activeDays.filter(d => isHabitScheduledForDayOfWeek(habit, d.dateObj.getDay())).length;
-    }
-    // Several versions: each active day counts by the version of that day. A due day (daily /
-    // fixed days) adds 1; flexible days add their share of that version's quota.
-    let goal = 0;
-    const flexGroups = new Map(); // version -> number of active flexible days
-    activeDays.forEach(d => {
-        const v = getScheduleVersion(habit, d.key);
-        if (v.goalType === 'flexible') flexGroups.set(v, (flexGroups.get(v) || 0) + 1);
-        else if (isHabitScheduledForDayOfWeek(v, d.dateObj.getDay())) goal++;
-    });
-    flexGroups.forEach((n, v) => {
-        const quota = Math.max(1, Number(v.weeklyGoal) || 1);
-        goal += n >= 7 ? quota : Math.ceil((quota * n) / 7);
-    });
-    return goal;
-}
-
-function formatStartDateLabel(dateKey) {
-    if (!isValidDateKey(dateKey)) return '';
-    const [y, m, d] = dateKey.split('-').map(Number);
-    const yearSuffix = y !== new Date().getFullYear() ? ` ${y}` : '';
-    return `${d} ב${HEBREW_MONTHS_FULL[m - 1]}${yearSuffix}`;
-}
-
-function getHabitGoalLabel(habit) {
-    habit = baseHabit(habit);
-    const base = getHabitGoalTypeLabel(habit);
-    const n = slotCount(habit);
-    return n > 1 ? `${base} · ${n} פעמים ביום` : base;
-}
-
-function getHabitGoalTypeLabel(habit) {
-    if (habit.goalType === 'daily') {
-        return 'כל יום (7/7)';
-    }
-    if (habit.goalType === 'fixed_days' && Array.isArray(habit.fixedDays) && habit.fixedDays.length > 0) {
-        const daysStr = habit.fixedDays.map(d => HEBREW_DAYS_SHORT[d]).join(', ');
-        return `ימים קבועים: ${daysStr}`;
-    }
-    return `${habit.weeklyGoal || 4} ימים בשבוע (גמיש)`;
 }
 
 function applyThemeUI(dark) {
@@ -1265,27 +1172,6 @@ function renderCategoryManagerItems() {
     patchHTML(listEl, Store.categories.map(cat => buildCategoryItemRowHtml(cat)).join(''));
 }
 
-function getFlexibleStreakInWeeks(habit) {
-    habit = baseHabit(habit);
-    const t = todayDayNum();
-    const todayKey = keyOfDayNum(t);
-    const history = habit.history || {};
-    const sunday0 = t - dowOfDayNum(t);
-    let streak = 0;
-
-    for (let w = 0; w >= -52; w--) {
-        const sunday = sunday0 + w * 7;
-        const lastKey = keyOfDayNum(sunday + 6);
-        const lastElapsed = lastKey < todayKey ? lastKey : todayKey;
-        const quota = Math.max(1, Number(getScheduleVersion(habit, lastElapsed).weeklyGoal) || 1);
-        let doneInWeek = 0;
-        for (let j = 0; j < 7; j++) if (history[keyOfDayNum(sunday + j)]) doneInWeek++;
-        if (doneInWeek >= quota) streak++;
-        else if (w !== 0) break; // the current week may still be in progress
-    }
-    return streak;
-}
-
 // Memoized per habit: recomputed only when that habit's data changed (its Store
 // revision) or the day rolled over. Results are frozen so callers can't alter the cache.
 const habitMemo = new Map(); // id -> { rev, today, obj, slots: Map }
@@ -1311,43 +1197,6 @@ function calculateStreak(habit) {
     return memoForHabit(habit, 'streak', () => computeStreak(habit));
 }
 
-function computeStreak(habit) {
-    // The unit (days / weeks) follows the version in force today
-    if (isFlexibleOnKey(habit, getDateKeyDaysAgo(0))) {
-        return getFlexibleStreakInWeeks(habit);
-    }
-    const t = todayDayNum();
-    let streak = 0;
-    for (let i = 0; i < 365; i++) {
-        const key = keyOfDayNum(t - i);
-        const done = !!(habit.history && habit.history[key]);
-
-        if (i === 0 && !done) {
-            continue;
-        }
-
-        if (!isHabitActiveOnKey(habit, key)) {
-            if (habit.startDate && key < habit.startDate) break;
-            continue; // paused (archived) days neither break nor extend the streak
-        }
-
-        if (done) {
-            streak++;
-        } else {
-            // a day that wasn't due by that day's version doesn't break the streak
-            if (!isHabitScheduledForDateKey(habit, key)) {
-                continue;
-            }
-            break;
-        }
-    }
-    return streak;
-}
-
-function getHabitStreakUnit(habit) {
-    return habit && isFlexibleOnKey(habit, getDateKeyDaysAgo(0)) ? 'שבועות' : 'ימים';
-}
-
 function getHabitStreakText(habit) {
     const s = calculateStreak(habit);
     const unit = getHabitStreakUnit(habit);
@@ -1358,14 +1207,6 @@ function getHabitStreakLongText(habit) {
     const s = calculateStreak(habit);
     const unit = getHabitStreakUnit(habit);
     return s > 0 ? `רצף של ${s} ${unit}` : '';
-}
-
-function getWeeklyCountForHabit(habit) {
-    habit = baseHabit(habit);
-    return weekDays.reduce(
-        (acc, d) => acc + (isHabitActiveOnKey(habit, d.key) && habit.history && habit.history[d.key] ? 1 : 0),
-        0
-    );
 }
 
 // Per-day totals. For the full list (the common case: day strip, calendar, toggles) results
@@ -1383,21 +1224,6 @@ function getDayStats(dayObj, habitList = Store.habits) {
         dayStatsCache.map.set(dayObj.key, stats);
     }
     return stats;
-}
-
-function computeDayStats(dayObj, habitList) {
-    const activeHabits = habitList.filter(h => isHabitActiveOnKey(h, dayObj.key));
-    const dow = dowOfKey(dayObj.key);
-    const scheduledHabits = activeHabits.filter(h => isHabitScheduledOnKey(h, dayObj.key, dow));
-    const totalScheduled = scheduledHabits.length;
-    const doneScheduled = scheduledHabits.filter(h => h.history && h.history[dayObj.key]).length;
-    const bonusDone = activeHabits.filter(
-        h => !isHabitScheduledOnKey(h, dayObj.key, dow) && h.history && h.history[dayObj.key]
-    ).length;
-    const totalDone = doneScheduled + bonusDone;
-    const pct = totalScheduled > 0 ? Math.min(100, Math.round((doneScheduled / totalScheduled) * 100)) : 0;
-    const allDone = totalScheduled > 0 && doneScheduled >= totalScheduled;
-    return { totalScheduled, doneScheduled, extraDone: bonusDone, bonusDone, totalDone, pct, allDone };
 }
 
 function switchMainSection(section) {
@@ -1959,20 +1785,6 @@ function renderFullCalendarGrid() {
     }
 }
 
-function formatWeekRangeText(firstDayObj, lastDayObj) {
-    const currentYear = new Date().getFullYear();
-    const firstMonthName = HEBREW_MONTHS_FULL[firstDayObj.dateObj.getMonth()];
-    const lastMonthName = HEBREW_MONTHS_FULL[lastDayObj.dateObj.getMonth()];
-    const firstYear = firstDayObj.dateObj.getFullYear();
-    const lastYear = lastDayObj.dateObj.getFullYear();
-    const yearSuffix = lastYear !== currentYear || firstYear !== currentYear ? ` ${lastYear}` : '';
-
-    if (firstDayObj.dateObj.getMonth() === lastDayObj.dateObj.getMonth()) {
-        return `${isoNum(`${firstDayObj.dayNum}–${lastDayObj.dayNum}`)} ב${lastMonthName}${yearSuffix}`;
-    }
-    return `${firstDayObj.dayNum} ב${firstMonthName} - ${lastDayObj.dayNum} ב${lastMonthName}${yearSuffix}`;
-}
-
 function setCategoryFilter(category, context = null) {
     const targetContext = context || (currentMainSection === 'manage' ? 'manage' : 'tracker');
     if (targetContext === 'manage') {
@@ -2135,23 +1947,6 @@ function renderTrackerSummary() {
 }
 
 let analyticsRangeState = { preset: 'week', start: null, end: null };
-
-function getPresetRange(preset) {
-    const todayKey = getDateKeyDaysAgo(0);
-    const today = parseDateKeyLocal(todayKey);
-    if (preset === '7d') return { start: addDaysToKey(todayKey, -6), end: todayKey };
-    if (preset === '30d') return { start: addDaysToKey(todayKey, -29), end: todayKey };
-    if (preset === 'month') {
-        const first = new Date(today.getFullYear(), today.getMonth(), 1);
-        const last = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-        return { start: formatDateKey(first), end: formatDateKey(last) };
-    }
-    // week (Sunday–Saturday)
-    const sunday = new Date(today);
-    sunday.setDate(today.getDate() - today.getDay());
-    const sundayKey = formatDateKey(sunday);
-    return { start: sundayKey, end: addDaysToKey(sundayKey, 6) };
-}
 
 function restoreAnalyticsRange(saved) {
     if (!saved || !ANALYTICS_PRESETS.some(p => p.id === saved.preset)) return;
@@ -2320,36 +2115,6 @@ function patchHTML(container, html) {
     }
 }
 
-// Keep a numeric range in reading order inside Hebrew text (an en dash between digits would flip)
-function isoNum(text) {
-    return `\u2066${text}\u2069`;
-}
-
-function formatRangeLabel() {
-    const { preset, start, end } = analyticsRangeState;
-    const current = preset !== 'custom' ? getPresetRange(preset) : null;
-    if (current && current.start === start && current.end === end) {
-        return preset === 'week'
-            ? 'השבוע הנוכחי'
-            : preset === 'month'
-              ? HEBREW_MONTHS_FULL[parseDateKeyLocal(start).getMonth()]
-              : preset === '7d'
-                ? '7 הימים האחרונים'
-                : '30 הימים האחרונים';
-    }
-    const s = parseDateKeyLocal(start),
-        e = parseDateKeyLocal(end);
-    if (preset === 'month' && s.getDate() === 1) {
-        return `${HEBREW_MONTHS_FULL[s.getMonth()]}${s.getFullYear() !== new Date().getFullYear() ? ' ' + s.getFullYear() : ''}`;
-    }
-    if (start === end) return `${s.getDate()} ב${HEBREW_MONTHS[s.getMonth()]}`;
-    const yearSuffix = e.getFullYear() !== new Date().getFullYear() ? ` ${e.getFullYear()}` : '';
-    if (s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear()) {
-        return `${isoNum(`${s.getDate()}–${e.getDate()}`)} ב${HEBREW_MONTHS[e.getMonth()]}${yearSuffix}`;
-    }
-    return `${s.getDate()} ב${HEBREW_MONTHS[s.getMonth()]} – ${e.getDate()} ב${HEBREW_MONTHS[e.getMonth()]}${yearSuffix}`;
-}
-
 function renderAnalyticsRangeControls() {
     ensureAnalyticsRange();
     const presetsEl = document.getElementById('analyticsRangePresets');
@@ -2363,7 +2128,7 @@ function renderAnalyticsRangeControls() {
         }">${p.label}</button>`;
     }).join('');
     updateSegPill(presetsEl);
-    document.getElementById('analyticsRangeLabel').textContent = formatRangeLabel();
+    document.getElementById('analyticsRangeLabel').textContent = formatRangeLabel(analyticsRangeState);
     const nextStart =
         analyticsRangeState.preset === 'month'
             ? formatDateKey(
@@ -2397,135 +2162,11 @@ function getHabitRangeProgress(habit, days, elapsedOnly) {
     return memoForHabit(habit, slot, () => computeHabitRangeProgress(habit, days, elapsedOnly));
 }
 
-function computeHabitRangeProgress(habit, days, elapsedOnly) {
-    const pool = elapsedOnly ? days.filter(d => !d.isFuture) : days;
-    const doneOn = d => (habit.history && habit.history[d.key] ? 1 : 0);
-    // A flexible stretch of days owes its share of the weekly quota. A week still in progress
-    // only owes the share earned so far (rounded down), so it isn't "behind" on its first day.
-    const flexTarget = (quota, n, inProgress) =>
-        inProgress ? Math.floor((quota * n) / 7) : Math.max(1, Math.ceil((quota * n) / 7));
-
-    if (!Array.isArray(habit.schedule) || habit.schedule.length <= 1) {
-        if (habit.goalType === 'flexible') {
-            const weeklyGoal = Math.max(1, Number(habit.weeklyGoal) || 1);
-            let target = 0,
-                done = 0;
-            splitDaysIntoWeeks(days).forEach(week => {
-                const activeInWeek = week.filter(d => isHabitActiveOnKey(habit, d.key));
-                const counted = elapsedOnly ? activeInWeek.filter(d => !d.isFuture) : activeInWeek;
-                if (counted.length === 0) return;
-                const inProgress = elapsedOnly && week.some(d => d.isFuture);
-                const weekTarget = flexTarget(weeklyGoal, counted.length, inProgress);
-                if (weekTarget === 0) return;
-                const checks = counted.reduce((acc, d) => acc + doneOn(d), 0);
-                target += weekTarget;
-                done += Math.min(weekTarget, checks);
-            });
-            return { target, done };
-        }
-        const scheduled = pool.filter(
-            d => isHabitActiveOnKey(habit, d.key) && isHabitScheduledForDayOfWeek(habit, d.dateObj.getDay())
-        );
-        const done = scheduled.reduce((acc, d) => acc + doneOn(d), 0);
-        return { target: scheduled.length, done: Math.min(scheduled.length, done) };
-    }
-
-    // Several versions: split into calendar weeks; due days count one by one,
-    // flexible days (grouped by version) owe their share of that version's quota.
-    let target = 0,
-        done = 0;
-    splitDaysIntoWeeks(days).forEach(week => {
-        const activeInWeek = week.filter(d => isHabitActiveOnKey(habit, d.key));
-        const counted = elapsedOnly ? activeInWeek.filter(d => !d.isFuture) : activeInWeek;
-        if (counted.length === 0) return;
-        const inProgress = elapsedOnly && week.some(d => d.isFuture);
-        const flexGroups = new Map();
-        counted.forEach(d => {
-            const v = getScheduleVersion(habit, d.key);
-            if (v.goalType === 'flexible') {
-                if (!flexGroups.has(v)) flexGroups.set(v, []);
-                flexGroups.get(v).push(d);
-            } else if (isHabitScheduledForDayOfWeek(v, d.dateObj.getDay())) {
-                target++;
-                done += doneOn(d);
-            }
-        });
-        flexGroups.forEach((groupDays, v) => {
-            const weekTarget = flexTarget(Math.max(1, Number(v.weeklyGoal) || 1), groupDays.length, inProgress);
-            if (weekTarget === 0) return;
-            const checks = groupDays.reduce((acc, d) => acc + doneOn(d), 0);
-            target += weekTarget;
-            done += Math.min(weekTarget, checks);
-        });
-    });
-    return { target, done };
-}
-
-function getPreviousRangeBounds() {
-    const { preset, start, end } = analyticsRangeState;
-    if (preset === 'month') {
-        const s0 = parseDateKeyLocal(start);
-        const first = new Date(s0.getFullYear(), s0.getMonth() - 1, 1);
-        const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
-        return { start: formatDateKey(first), end: formatDateKey(last) };
-    }
-    const len = daysBetweenKeys(start, end) + 1;
-    return { start: addDaysToKey(start, -len), end: addDaysToKey(end, -len) };
-}
-
 // Longest streak a habit ever had (days, or weeks for flexible habits).
 function calculateBestStreak(habit) {
     habit = baseHabit(habit);
     if (!habit) return 0;
     return memoForHabit(habit, 'best', () => computeBestStreak(habit));
-}
-
-function computeBestStreak(habit) {
-    const todayKey = getDateKeyDaysAgo(0);
-    const historyKeys = Object.keys(habit.history || {})
-        .filter(k => habit.history[k])
-        .sort();
-    let firstKey = habit.startDate && isValidDateKey(habit.startDate) ? habit.startDate : todayKey;
-    if (historyKeys.length && historyKeys[0] < firstKey) firstKey = historyKeys[0];
-    if (daysBetweenKeys(firstKey, todayKey) > 730) firstKey = addDaysToKey(todayKey, -730);
-    let best = 0,
-        run = 0;
-
-    const history = habit.history || {};
-    const todayNum = dayNumOf(todayKey);
-    if (isFlexibleOnKey(habit, todayKey)) {
-        const firstNum = dayNumOf(firstKey);
-        for (let sunday = firstNum - dowOfDayNum(firstNum); sunday <= todayNum; sunday += 7) {
-            const weekEndKey = keyOfDayNum(sunday + 6);
-            const weekEnd = weekEndKey < todayKey ? weekEndKey : todayKey;
-            const quota = Math.max(1, Number(getScheduleVersion(habit, weekEnd).weeklyGoal) || 1);
-            let done = 0;
-            for (let j = 0; j < 7; j++) if (history[keyOfDayNum(sunday + j)]) done++;
-            const isCurrentWeek = todayNum >= sunday && todayNum <= sunday + 6;
-            if (done >= quota) {
-                run++;
-                best = Math.max(best, run);
-            } else if (!isCurrentWeek) run = 0;
-        }
-        return best;
-    }
-
-    for (let n = dayNumOf(firstKey); n <= todayNum; n++) {
-        const key = keyOfDayNum(n);
-        const done = !!history[key];
-        // Same rules as the current streak: paused days are skipped, rest days don't break it
-        if (!isHabitActiveOnKey(habit, key)) {
-            // not tracked on this day
-        } else if (done) {
-            run++;
-            best = Math.max(best, run);
-        } else if (!isHabitScheduledOnKey(habit, key, dowOfDayNum(n))) {
-            // not due that day (by that day's version)
-        } else if (key !== todayKey) {
-            run = 0;
-        }
-    }
-    return best;
 }
 
 // ===== Analytics: filter (all / category / single habit) =====
@@ -2651,7 +2292,7 @@ function renderAnalytics() {
     document.getElementById('weeklyTotalChecks').textContent = `${cur.done} מתוך ${cur.target} יעדים`;
 
     // Compare with the previous range of the same kind
-    const prevBounds = getPreviousRangeBounds();
+    const prevBounds = getPreviousRangeBounds(analyticsRangeState);
     const prevDays = buildDaysForRange(prevBounds.start, prevBounds.end);
     const prev = rangeRate(
         prevDays,
@@ -3196,7 +2837,8 @@ function renderLeaderboard() {
     if (!container) return;
 
     const days = getAnalyticsDays();
-    const isCurrentWeek = analyticsRangeState.preset === 'week' && formatRangeLabel() === 'השבוע הנוכחי';
+    const isCurrentWeek =
+        analyticsRangeState.preset === 'week' && formatRangeLabel(analyticsRangeState) === 'השבוע הנוכחי';
     const periodWord = isCurrentWeek ? 'השבוע' : 'בטווח';
     const progressOf = h => {
         const { target, done } = getHabitRangeProgress(h, days, false);
@@ -3564,8 +3206,8 @@ function buildHabitFocusCardHtml(habit, selectedDayObj, isSelectedDayFuture, tim
     const isScheduledToday = isHabitScheduledForDayOfWeek(habit, selectedDayOfWeek);
     const streak = calculateStreak(habit);
     const streakLongText = getHabitStreakLongText(habit);
-    const weeklyCount = getWeeklyCountForHabit(habit);
-    const weeklyGoal = getWeeklyGoalForHabit(habit);
+    const weeklyCount = getWeeklyCountForHabit(habit, weekDays);
+    const weeklyGoal = getWeeklyGoalForHabit(habit, weekDays);
     const weeklyPct = weeklyGoal > 0 ? Math.min(100, Math.round((weeklyCount / weeklyGoal) * 100)) : 0;
     const isWeeklyQuotaMet = isFlexible && weeklyGoal > 0 && weeklyCount >= weeklyGoal;
     const goalLabel = getHabitGoalLabel(habit);
@@ -3764,7 +3406,10 @@ function renderHabitsList() {
                 ? isSlotDone(h, selectedDateKey, h._slot)
                 : !!(h.history && h.history[selectedDateKey]));
         const flexInPlan = flexibleHabits.filter(
-            h => hasAnyTime(h) && (isDoneOnDay(h) || getWeeklyCountForHabit(h) < Math.max(1, getWeeklyGoalForHabit(h)))
+            h =>
+                hasAnyTime(h) &&
+                (isDoneOnDay(h) ||
+                    getWeeklyCountForHabit(h, weekDays) < Math.max(1, getWeeklyGoalForHabit(h, weekDays)))
         );
         const usePlan = orderedScheduled.some(h => hasAnyTime(h)) || flexInPlan.length > 0;
 
@@ -3890,8 +3535,8 @@ function renderHabitsList() {
             .map(habit => {
                 const colorMeta = getColorMeta(habit.color);
                 const streakText = getHabitStreakText(habit);
-                const weeklyCount = getWeeklyCountForHabit(habit);
-                const weeklyGoal = getWeeklyGoalForHabit(habit);
+                const weeklyCount = getWeeklyCountForHabit(habit, weekDays);
+                const weeklyGoal = getWeeklyGoalForHabit(habit, weekDays);
                 const goalLabel = getHabitGoalLabel(habit);
                 const isFlexible = habit.goalType === 'flexible';
 
@@ -3961,8 +3606,8 @@ function renderHabitsList() {
             .map(habit => {
                 const colorMeta = getColorMeta(habit.color);
                 const streakLongText = getHabitStreakLongText(habit);
-                const weeklyCount = getWeeklyCountForHabit(habit);
-                const weeklyGoal = getWeeklyGoalForHabit(habit);
+                const weeklyCount = getWeeklyCountForHabit(habit, weekDays);
+                const weeklyGoal = getWeeklyGoalForHabit(habit, weekDays);
 
                 const gridButtons = weekDays
                     .map(d => {
@@ -4291,10 +3936,6 @@ function updateManageBulkBar() {
     document.getElementById('manageBulkSelectAllBtn').textContent = allSelected ? 'ניקוי בחירה' : 'בחירת הכל';
     document.getElementById('manageBulkArchiveBtn').disabled = n === 0;
     document.getElementById('manageBulkDeleteBtn').disabled = n === 0;
-}
-
-function habitCountLabel(n) {
-    return n === 1 ? 'הרגל אחד' : `${n} הרגלים`;
 }
 
 function archiveHabitsByIds(ids) {
@@ -4997,18 +4638,7 @@ function syncHabitTimeFields() {
 let overlapIndex = { revision: -1, entries: [] };
 function getOverlapIndex() {
     if (overlapIndex.revision === Store.revision) return overlapIndex.entries;
-    const entries = [];
-    getLiveHabits().forEach(h => {
-        if (!hasAnyTime(h)) return;
-        const days = scheduleWeekdays(h);
-        const blocks = [];
-        let mask = 0;
-        days.forEach(d => {
-            blocks[d] = timesOnDay(h, d).map(t => [...timeBlock(t, h.duration), t]);
-            mask |= 1 << d;
-        });
-        entries.push({ h, days, mask, blocks });
-    });
+    const entries = buildOverlapIndex(getLiveHabits());
     overlapIndex = { revision: Store.revision, entries };
     return entries;
 }
@@ -5019,31 +4649,7 @@ function findTimeOverlaps(def, excludeId) {
     if (!hasAnyTime(def)) return [];
     const key = `${Store.revision}|${excludeId}|${def.duration}|${JSON.stringify(scheduleWeekdays(def).map(d => dayTimesRow(def, d)))}`;
     if (overlapMemo.key === key) return overlapMemo.result;
-    const days1 = scheduleWeekdays(def);
-    let mask1 = 0;
-    const blocks1 = [];
-    days1.forEach(d => {
-        mask1 |= 1 << d;
-        blocks1[d] = timesOnDay(def, d).map(t => timeBlock(t, def.duration));
-    });
-    const result = [];
-    getOverlapIndex().forEach(({ h, days, mask, blocks }) => {
-        if (h.id === excludeId || !(mask & mask1)) return;
-        let hit = '';
-        const hitDays = days.filter(d => {
-            if (!(mask1 & (1 << d))) return false;
-            return blocks1[d].some(([s1, e1]) =>
-                blocks[d].some(([s2, e2, t2]) => {
-                    if (s1 < e2 && s2 < e1) {
-                        hit = hit || t2;
-                        return true;
-                    }
-                    return false;
-                })
-            );
-        });
-        if (hitDays.length) result.push({ h, days: hitDays, time: hit });
-    });
+    const result = findOverlapsIn(getOverlapIndex(), def, excludeId);
     overlapMemo = { key, result };
     return result;
 }
@@ -5091,13 +4697,6 @@ function updateHabitTimeHint() {
 
 // ---- "Which days does the change apply to?" ----
 let scheduleScope = 'forward';
-
-function describeScheduleVersion(v, mentionNoTime) {
-    // the time summary already says "N פעמים ביום", so use the goal type alone
-    const label = hasAnyTime(v) ? getHabitGoalTypeLabel(v) : getHabitGoalLabel(v);
-    if (hasAnyTime(v)) return `${label}, ${scheduleTimeSummary(v)}`;
-    return mentionNoTime ? `${label}, ללא שעה` : label;
-}
 
 function setScheduleScope(scope) {
     scheduleScope = scope;
@@ -5898,15 +5497,6 @@ function toggleSound() {
     showToast(soundEnabled ? 'צלילי משוב הופעלו' : 'צלילי משוב הושתקו');
 }
 
-function escapeHtml(str) {
-    return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-}
-
 // ===== Rendering by section =====
 // A change makes every section stale, but only the visible one is rebuilt now; a hidden
 // section is rebuilt when it is opened. (Before, every change rebuilt all three sections,
@@ -6199,23 +5789,6 @@ document.addEventListener(
     },
     { capture: true, passive: true }
 );
-
-function formatDateTriggerLabel(key) {
-    if (!isValidDateKey(key)) return '';
-    const [y, m, d] = key.split('-').map(Number);
-    const dt = new Date(y, m - 1, d);
-    const todayKey = getDateKeyDaysAgo(0);
-    const prefix = key === todayKey ? 'היום, ' : key === getDateKeyDaysAgo(1) ? 'אתמול, ' : '';
-    const yearSuffix = y !== new Date().getFullYear() ? ` ${y}` : '';
-    return `${prefix}${HEBREW_DAYS_FULL[dt.getDay()]}, ${d} ב${HEBREW_MONTHS_FULL[m - 1]}${yearSuffix}`;
-}
-
-function formatDateCompactLabel(key) {
-    if (!isValidDateKey(key)) return '';
-    const [y, m, d] = key.split('-').map(Number);
-    const yearSuffix = y !== new Date().getFullYear() ? ` ${y}` : '';
-    return `${d} ב${HEBREW_MONTHS_SHORT[m - 1]}${yearSuffix}`;
-}
 
 function enhanceDateInput(input, title, customOpen) {
     if (input.dataset.enhanced) return;
