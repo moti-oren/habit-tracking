@@ -1,6 +1,7 @@
+// Modals: animated open/close, focus in and back out, Escape, Tab stays inside
+
 import { prefersReducedMotion } from '../dom/animate.js';
 
-// ===== Modals: animated open/close, focus in and back out, Escape, Tab stays inside =====
 const openModalStack = [];
 
 const FOCUSABLE =

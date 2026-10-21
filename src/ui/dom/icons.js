@@ -1,6 +1,5 @@
-// Interface icons: 24px stroke SVGs as HTML strings (emoji are used only for habit icons).
-
 // One icon language for the whole UI: 24px stroke SVGs (emoji are kept only for habit icons)
+
 const ICON_PATHS = {
     check: 'M5 13l4 4L19 7',
     x: 'M6 18L18 6M6 6l12 12',
@@ -14,9 +13,6 @@ export function icon(name, cls = 'w-4 h-4', strokeWidth = 2.5) {
     return `<svg class="${cls} shrink-0 inline-block" fill="none" stroke="currentColor" stroke-width="${strokeWidth}" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="${ICON_PATHS[name]}"/></svg>`;
 }
 
-// ===== Custom form controls (replace native <select> and date inputs) =====
-// The native element stays in the DOM (hidden) and keeps the value, so existing code that
-// reads/writes `.value` keeps working; the custom control mirrors it.
 export const CHEVRON_SVG =
     '<svg class="w-4 h-4 shrink-0 text-slate-500 dark:text-slate-400 transition-transform" data-chevron fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>';
 

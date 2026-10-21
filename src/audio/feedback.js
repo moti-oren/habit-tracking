@@ -1,3 +1,5 @@
+// Feedback sounds (Web Audio): checking, unchecking, and a day completed.
+
 import { app } from '../state/app.js';
 
 let audioCtx = null;

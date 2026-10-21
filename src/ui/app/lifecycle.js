@@ -71,3 +71,19 @@ export function checkDayRollover() {
         renderAll();
     }
 }
+
+/** Fades the first-load skeleton out once the page is styled (or after 2.5s at most). */
+export function hideSkeleton() {
+    const skeleton = document.getElementById('appSkeleton');
+    const startedAt = performance.now();
+    (function waitForStyles() {
+        const nav = document.getElementById('dateNavigator');
+        const styled = nav && getComputedStyle(nav).borderTopLeftRadius !== '0px';
+        if (styled || performance.now() - startedAt > 2500) {
+            skeleton.classList.add('is-done');
+            setTimeout(() => skeleton.remove(), 250);
+        } else {
+            requestAnimationFrame(waitForStyles);
+        }
+    })();
+}

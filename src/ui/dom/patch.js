@@ -1,4 +1,4 @@
-// ===== Targeted DOM updates =====
+// Targeted DOM updates.
 // Renderers still describe a list as one HTML string, but only nodes that actually changed
 // are touched: unchanged cards keep their DOM node (and their focus, hover state and running
 // animations). A node whose own attributes changed is replaced whole, so CSS animation

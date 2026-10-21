@@ -1,4 +1,4 @@
-// ===== Sliding pill: one background that glides to the active option of a segmented control =====
+// Sliding pill: one background that glides to the active option of a segmented control.
 // The active option is whichever child has aria-current="page", aria-selected="true" or aria-pressed="true".
 // Several controls are measured together: all DOM writes that change layout first, then every
 // read in one layout pass, then all the style writes (no read/write interleaving).

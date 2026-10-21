@@ -63,7 +63,7 @@ export function getEarliestCheckedKey(habit) {
 }
 
 // For habits saved before start dates existed: earliest of (first check mark, creation time encoded in the id), else today
-export function inferHabitStartDate(habit) {
+function inferHabitStartDate(habit) {
     const candidates = [];
     const firstCheck = getEarliestCheckedKey(habit);
     if (firstCheck) candidates.push(firstCheck);

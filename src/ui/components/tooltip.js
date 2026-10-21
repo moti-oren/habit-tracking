@@ -1,6 +1,5 @@
 // Tooltip: one element, 300ms hover delay with a mouse; tap-to-show on chart cells with touch.
 
-// ===== Tooltip: one element, 300ms hover delay with a mouse; tap-to-show on chart cells with touch =====
 export function initTooltips() {
     const tip = document.createElement('div');
     tip.id = 'appTooltip';

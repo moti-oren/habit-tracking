@@ -100,7 +100,7 @@ export function renderBarChart(dayStats, avgPct, single = null) {
 // correct when fonts, labels or breakpoints change the layout.
 let avgLineFrame = 0;
 
-export function schedulePositionAvgLine() {
+function schedulePositionAvgLine() {
     if (avgLineFrame) return;
     avgLineFrame = requestAnimationFrame(() => {
         avgLineFrame = 0;

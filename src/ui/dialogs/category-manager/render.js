@@ -67,7 +67,7 @@ export function renderCategoryManagerItems() {
 }
 
 // --- Categories: multi-select delete (inside the category manager) ---
-export function updateCategorySelectUi() {
+function updateCategorySelectUi() {
     const toggle = document.getElementById('categorySelectToggleBtn');
     const allBtn = document.getElementById('categorySelectAllBtn');
     const info = document.getElementById('categorySelectInfo');

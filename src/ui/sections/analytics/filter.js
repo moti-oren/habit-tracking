@@ -1,3 +1,5 @@
+// What analytics shows: every habit, one category or one habit (the filter select).
+
 import { getHabitCategoryDisplay, isHabitArchived } from '../../../core/habit.js';
 import { analytics } from '../../../state/analytics.js';
 import { getLiveHabits } from '../../../store/selectors.js';

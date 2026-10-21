@@ -1,3 +1,5 @@
+// The tracker's daily list.
+
 import { DAY_PARTS } from '../../../config/schedule.js';
 import { getDateKeyDaysAgo, isFutureDateKey } from '../../../core/dates.js';
 import { isSlotDone } from '../../../core/habit.js';

@@ -1,3 +1,5 @@
+// The calendar grid of one habit, for long ranges.
+
 import { HEBREW_DAYS_SHORT, HEBREW_MONTHS } from '../../../config/hebrew.js';
 import { addDaysToKey, buildDaysForRange, formatDateKey } from '../../../core/dates.js';
 import { isHabitActiveOnKey } from '../../../core/habit.js';

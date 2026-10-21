@@ -1,3 +1,8 @@
+// Rendering by section
+// A change makes every section stale, but only the visible one is rebuilt now; a hidden
+// section is rebuilt when it is opened. (Before, every change rebuilt all three sections,
+// including both charts, even when only the tracker was on screen.)
+
 import { app } from '../../state/app.js';
 import { motion } from '../../state/motion.js';
 import { renderAnalytics } from '../sections/analytics/analytics.js';
@@ -9,10 +14,6 @@ import { renderHabitsList } from '../sections/tracker/habits-list.js';
 import { renderTrackerSummary } from '../sections/tracker/summary.js';
 import { renderGreeting } from '../shell/greeting.js';
 
-// ===== Rendering by section =====
-// A change makes every section stale, but only the visible one is rebuilt now; a hidden
-// section is rebuilt when it is opened. (Before, every change rebuilt all three sections,
-// including both charts, even when only the tracker was on screen.)
 const staleSections = new Set(['tracker', 'analytics', 'manage']);
 
 const SECTION_RENDERERS = {

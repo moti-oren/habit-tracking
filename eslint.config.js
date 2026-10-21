@@ -8,7 +8,7 @@ import prettier from 'eslint-config-prettier';
 const LAYERS = ['config', 'core', 'store', 'state', 'audio', 'ui', 'events'];
 const layerZones = LAYERS.map((layer, i) => ({
     target: `./src/${layer}`,
-    from: [...LAYERS.slice(i + 1).map(l => `./src/${l}`), './src/main.js', './src/monolith.js'],
+    from: [...LAYERS.slice(i + 1).map(l => `./src/${l}`), './src/main.js'],
     message: `"${layer}" may only import from: ${LAYERS.slice(0, i).join(', ') || 'nothing'}.`
 }));
 

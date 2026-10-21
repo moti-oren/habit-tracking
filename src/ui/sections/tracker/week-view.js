@@ -1,3 +1,5 @@
+// The tracker's weekly table.
+
 import { getColorMeta } from '../../../config/colors.js';
 import { isFutureDateKey } from '../../../core/dates.js';
 import { formatStartDateLabel, getHabitGoalLabel } from '../../../core/format.js';

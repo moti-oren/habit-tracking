@@ -1,6 +1,7 @@
+// Layout moves (FLIP): cards that stay glide to their new place, new ones fade in
+
 import { prefersReducedMotion } from './animate.js';
 
-// ===== Layout moves (FLIP): cards that stay glide to their new place, new ones fade in =====
 const EASE_OUT_JS = 'cubic-bezier(0.22, 1, 0.36, 1)';
 
 function captureFlip() {

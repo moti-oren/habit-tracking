@@ -1,3 +1,7 @@
+// Custom form controls (replace native <select> and date inputs).
+// The native element stays in the DOM (hidden) and keeps the value, so existing code that
+// reads/writes `.value` keeps working; the custom control mirrors it.
+
 import { prefersReducedMotion } from '../dom/animate.js';
 import { escapeHtml } from '../dom/html.js';
 import { CHEVRON_SVG } from '../dom/icons.js';

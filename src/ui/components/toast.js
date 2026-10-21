@@ -1,6 +1,7 @@
+// Toast: short entry, undo countdown bar, pauses while hovered or focused
+
 import { undo } from '../../state/undo.js';
 
-// ===== Toast: short entry, undo countdown bar, pauses while hovered or focused =====
 let toastTimer = null;
 
 let toastEndsAt = 0;
@@ -11,7 +12,7 @@ const TOAST_HIDDEN = ['opacity-0', 'translate-y-2', 'scale-[0.96]', 'lg:-transla
 
 const TOAST_SHOWN = ['opacity-100', 'translate-y-0', 'scale-100'];
 
-export function hideToast() {
+function hideToast() {
     const container = document.getElementById('toastContainer');
     container.classList.add(...TOAST_HIDDEN);
     container.classList.remove(...TOAST_SHOWN, 'pointer-events-auto', 'toast-paused');

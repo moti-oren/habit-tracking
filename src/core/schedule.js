@@ -1,4 +1,4 @@
-// Scheduling: goal type, days, time — with history
+// Scheduling: goal type, days, time — with history.
 // Each habit keeps `schedule`: versions { from, goalType, fixedDays, weeklyGoal, time, duration },
 // sorted by `from` (the first version has from: null = "from the start"). Every past day is
 // measured by the version in force on that day. The top-level fields always mirror the last version.

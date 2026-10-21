@@ -15,3 +15,10 @@ export function scheduleScrollFades() {
         updateScrollFades();
     });
 }
+
+/** Scrolling a horizontal scroller updates its fade. */
+export function wireScrollFadeListeners() {
+    document.querySelectorAll('.scroll-fade-x').forEach(el => {
+        el.addEventListener('scroll', scheduleScrollFades, { passive: true });
+    });
+}

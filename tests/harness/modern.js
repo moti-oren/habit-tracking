@@ -9,13 +9,13 @@ import { ROOT } from './paths.js';
 
 const exists = m => fs.existsSync(path.join(ROOT, 'src', `${m}.js`));
 
-/** Every module under src/ except the entry point and the shrinking monolith. */
+/** Every module under src/ except the entry point. */
 function allModules(dir = path.join(ROOT, 'src')) {
     return fs.readdirSync(dir, { withFileTypes: true }).flatMap(e => {
         const p = path.join(dir, e.name);
         if (e.isDirectory()) return allModules(p);
         const rel = path.relative(path.join(ROOT, 'src'), p).split(path.sep).join('/').replace(/\.js$/, '');
-        return e.name.endsWith('.js') && rel !== 'main' && rel !== 'monolith' ? [rel] : [];
+        return e.name.endsWith('.js') && rel !== 'main' ? [rel] : [];
     });
 }
 

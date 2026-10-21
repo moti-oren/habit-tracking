@@ -52,7 +52,7 @@ export function getWeeklyGoalForHabit(habit, days) {
     return goal;
 }
 
-export function getFlexibleStreakInWeeks(habit) {
+function getFlexibleStreakInWeeks(habit) {
     habit = baseHabit(habit);
     const t = todayDayNum();
     const todayKey = keyOfDayNum(t);
