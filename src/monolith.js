@@ -3,12 +3,11 @@
 /* eslint-disable no-unused-vars -- dead locals are removed when each area is extracted */
 
 import { ANALYTICS_PRESETS, MAX_RANGE_DAYS } from './config/analytics.js';
-import { DEFAULT_CATEGORIES, UNCATEGORIZED_LABEL } from './config/categories.js';
+import { UNCATEGORIZED_LABEL } from './config/categories.js';
 import { COLOR_OPTIONS, getColorMeta } from './config/colors.js';
 import { HEBREW_DAYS_FULL, HEBREW_DAYS_SHORT, HEBREW_MONTHS, HEBREW_MONTHS_FULL } from './config/hebrew.js';
 import { ICON_OPTIONS, MORE_ICONS } from './config/icons.js';
 import { DAY_PARTS, MAX_SLOTS } from './config/schedule.js';
-import { CATEGORIES_STORAGE_KEY, PREFS_STORAGE_KEY, STORAGE_KEY } from './config/storage-keys.js';
 import { formatRangeLabel, getPresetRange, getPreviousRangeBounds } from './core/analytics-range.js';
 import {
     addDaysToKey,
@@ -46,14 +45,9 @@ import {
     isHabitActiveInDays,
     isHabitActiveOnKey,
     isHabitArchived,
-    isSlotDone,
-    normalizeHabitGoal
+    isSlotDone
 } from './core/habit.js';
-import { buildOverlapIndex, findOverlapsIn } from './core/overlaps.js';
 import {
-    applyScheduleEdit,
-    baseHabit,
-    dayTimesRow,
     getScheduleVersion,
     habitOn,
     hasAnyTime,
@@ -66,16 +60,21 @@ import {
     slotCount
 } from './core/schedule.js';
 import { compareByName } from './core/sort.js';
-import {
-    computeBestStreak,
-    computeDayStats,
-    computeHabitRangeProgress,
-    computeStreak,
-    getWeeklyCountForHabit,
-    getWeeklyGoalForHabit
-} from './core/stats.js';
+import { getWeeklyCountForHabit, getWeeklyGoalForHabit } from './core/stats.js';
 import { getGraphemes } from './core/text.js';
 import { dayPartOf, timeRangeText, timeToMinutes } from './core/time.js';
+import { getDefaultHabits } from './store/sample-habits.js';
+import {
+    calculateBestStreak,
+    calculateStreak,
+    findTimeOverlaps,
+    getDayStats,
+    getHabitRangeProgress,
+    getHabitStreakLongText,
+    getHabitStreakText,
+    getLiveHabits
+} from './store/selectors.js';
+import { Store } from './store/store.js';
 import { escapeHtml, timeRangeHtml } from './ui/dom/html.js';
 
 // One icon language for the whole UI: 24px stroke SVGs (emoji are kept only for habit icons)
@@ -177,115 +176,6 @@ let selectedModalColor = COLOR_OPTIONS[0].id;
 let selectedModalGoalType = 'daily';
 let selectedModalFixedDays = [0, 2, 4];
 let editingCategoryName = null;
-
-function getDefaultHabits() {
-    return [
-        {
-            id: 'h1',
-            name: 'אימון כוח / מתח',
-            category: 'כושר',
-            note: 'סטים של מתח, שכיבות סמיכה וליבה',
-            icon: '🏋️',
-            color: 'teal',
-            goalType: 'fixed_days',
-            fixedDays: [0, 2, 3, 5],
-            weeklyGoal: 4,
-            history: {
-                [getDateKeyDaysAgo(6)]: true,
-                [getDateKeyDaysAgo(5)]: false,
-                [getDateKeyDaysAgo(4)]: true,
-                [getDateKeyDaysAgo(3)]: true,
-                [getDateKeyDaysAgo(2)]: false,
-                [getDateKeyDaysAgo(1)]: true,
-                [getDateKeyDaysAgo(0)]: true
-            }
-        },
-        {
-            id: 'h2',
-            name: 'נגינה בגיטרה (30 דק׳)',
-            category: 'פוקוס',
-            note: 'תרגול אקורדים, פריטה וקטע חדש',
-            icon: '🎸',
-            color: 'purple',
-            goalType: 'flexible',
-            fixedDays: [],
-            weeklyGoal: 5,
-            history: {
-                [getDateKeyDaysAgo(6)]: true,
-                [getDateKeyDaysAgo(5)]: true,
-                [getDateKeyDaysAgo(4)]: false,
-                [getDateKeyDaysAgo(3)]: true,
-                [getDateKeyDaysAgo(2)]: true,
-                [getDateKeyDaysAgo(1)]: true,
-                [getDateKeyDaysAgo(0)]: false
-            }
-        },
-        {
-            id: 'h3',
-            name: 'שתיית 2.5 ליטר מים',
-            category: 'בריאות',
-            note: 'הידרציה מלאה לאורך כל היום',
-            icon: '💧',
-            color: 'sky',
-            goalType: 'daily',
-            fixedDays: [0, 1, 2, 3, 4, 5, 6],
-            weeklyGoal: 7,
-            history: {
-                [getDateKeyDaysAgo(6)]: true,
-                [getDateKeyDaysAgo(5)]: true,
-                [getDateKeyDaysAgo(4)]: true,
-                [getDateKeyDaysAgo(3)]: true,
-                [getDateKeyDaysAgo(2)]: true,
-                [getDateKeyDaysAgo(1)]: true,
-                [getDateKeyDaysAgo(0)]: true
-            }
-        },
-        {
-            id: 'h4',
-            name: 'תרגול אנגלית / קריאה',
-            category: 'למידה',
-            note: 'קריאת 15 עמודים או פרק באנגלית',
-            icon: '📚',
-            color: 'indigo',
-            goalType: 'daily',
-            fixedDays: [0, 1, 2, 3, 4, 5, 6],
-            weeklyGoal: 7,
-            history: {
-                [getDateKeyDaysAgo(6)]: true,
-                [getDateKeyDaysAgo(5)]: true,
-                [getDateKeyDaysAgo(4)]: true,
-                [getDateKeyDaysAgo(3)]: false,
-                [getDateKeyDaysAgo(2)]: true,
-                [getDateKeyDaysAgo(1)]: true,
-                [getDateKeyDaysAgo(0)]: true
-            }
-        },
-        {
-            id: 'h5',
-            name: 'ריצה או הליכה מהירה',
-            category: 'כושר',
-            note: '30 דקות אירובי באוויר הפתוח',
-            icon: '🏃',
-            color: 'orange',
-            goalType: 'fixed_days',
-            fixedDays: [1, 3, 6],
-            weeklyGoal: 3,
-            history: {
-                [getDateKeyDaysAgo(6)]: false,
-                [getDateKeyDaysAgo(5)]: true,
-                [getDateKeyDaysAgo(4)]: true,
-                [getDateKeyDaysAgo(3)]: false,
-                [getDateKeyDaysAgo(2)]: false,
-                [getDateKeyDaysAgo(1)]: true,
-                [getDateKeyDaysAgo(0)]: false
-            }
-        }
-    ];
-}
-
-function getLiveHabits() {
-    return Store.liveHabits();
-}
 
 function applyThemeUI(dark) {
     isDarkMode = !!dark;
@@ -417,377 +307,6 @@ function applyViewModeButtonsUI(mode) {
     gridBtn.setAttribute('aria-pressed', String(mode !== 'focus'));
     updateSegPill(focusBtn.parentElement);
 }
-
-// ===================================================================
-// Store: the only owner of the data (habits + categories), of every change to it,
-// and of its sync to localStorage. The view reads through it and asks it to change
-// things; it never edits the arrays or touches storage itself.
-// ===================================================================
-const Store = (() => {
-    const KEYS = { habits: STORAGE_KEY, categories: CATEGORIES_STORAGE_KEY, prefs: PREFS_STORAGE_KEY };
-    const LEGACY_HABITS_KEY = 'pulse_habit_tracker_he_v2';
-    const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
-    const ICON_UNSAFE_RE = /[<>&"'`\\]/;
-    let habits = [];
-    let categories = [...DEFAULT_CATEGORIES];
-    let revision = 0; // bumps on every commit
-    let revCounter = 0; // per-habit revisions come from here, so they are never reused
-    const habitRevs = new Map(); // id -> revision of that habit's content
-    const habitJson = new Map(); // id -> last serialized form (dirty checking)
-    const lastWritten = new Map();
-    let liveCache = { revision: -1, list: Object.freeze([]) };
-    let prefsProvider = () => null;
-    let onPersistError = () => {};
-
-    // ---- storage I/O (the only place that reads or writes localStorage for data) ----
-    function isQuotaError(e) {
-        return (
-            !!e &&
-            (e.name === 'QuotaExceededError' ||
-                e.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
-                e.code === 22 ||
-                e.code === 1014)
-        );
-    }
-    function read(key) {
-        try {
-            return localStorage.getItem(key);
-        } catch (e) {
-            console.warn('Could not read', key, e);
-            return null;
-        }
-    }
-    function readJson(key) {
-        const raw = read(key);
-        if (raw === null) return undefined;
-        try {
-            return JSON.parse(raw);
-        } catch (e) {
-            console.warn('Ignoring damaged data in', key, e);
-            return undefined;
-        }
-    }
-    function write(key, value) {
-        if (lastWritten.get(key) === value) return true; // unchanged since the last successful write
-        try {
-            localStorage.setItem(key, value);
-            lastWritten.set(key, value);
-            return true;
-        } catch (e) {
-            lastWritten.delete(key);
-            console.warn('Could not persist', key, e);
-            onPersistError(isQuotaError(e) ? 'quota' : 'unavailable');
-            return false;
-        }
-    }
-
-    // ---- validation of stored data (it may be old, edited by hand, or damaged) ----
-    function sanitizeIcon(v) {
-        const icon = typeof v === 'string' ? v.trim() : '';
-        return icon && icon.length <= 32 && !ICON_UNSAFE_RE.test(icon) ? icon : ICON_OPTIONS[0].emoji;
-    }
-    function sanitizeHistory(h) {
-        const out = {};
-        if (h && typeof h === 'object' && !Array.isArray(h)) {
-            Object.keys(h).forEach(k => {
-                if (isValidDateKey(k)) out[k] = !!h[k];
-            });
-        }
-        return out;
-    }
-    // Fixes only what is invalid, so valid data keeps its exact shape and key order
-    function sanitizeHabit(raw, index, seenIds) {
-        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-        const h = { ...raw };
-        let id = typeof h.id === 'string' && ID_RE.test(h.id) ? h.id : null;
-        if (!id || seenIds.has(id)) {
-            id = `h_${Date.now()}_${index}`;
-            while (seenIds.has(id)) id += 'x';
-        }
-        seenIds.add(id);
-        if (h.id !== id) h.id = id;
-        if (typeof h.name !== 'string' || !h.name.trim()) h.name = 'הרגל ללא שם';
-        else if (h.name.length > 120) h.name = h.name.slice(0, 120);
-        if (h.category !== undefined && typeof h.category !== 'string') h.category = '';
-        if (h.note !== undefined && typeof h.note !== 'string') h.note = '';
-        else if (typeof h.note === 'string' && h.note.length > 300) h.note = h.note.slice(0, 300);
-        const icon = sanitizeIcon(h.icon);
-        if (icon !== h.icon) h.icon = icon;
-        if (typeof h.color !== 'string') h.color = COLOR_OPTIONS[0].id;
-        const history = sanitizeHistory(h.history);
-        if (JSON.stringify(history) !== JSON.stringify(h.history)) h.history = history;
-        return normalizeHabitGoal(h);
-    }
-    function sanitizeCategories(list) {
-        if (!Array.isArray(list)) return null;
-        const reserved = ['הכל', UNCATEGORIZED_LABEL];
-        return [
-            ...new Set(
-                list
-                    .filter(c => typeof c === 'string' || typeof c === 'number')
-                    .map(c => String(c).trim())
-                    .filter(c => c && c.length <= 40 && !reserved.includes(c))
-            )
-        ];
-    }
-
-    // ---- invariants + persistence ----
-    // Every habit's category exists, and both lists stay in alphabetical (Hebrew) order.
-    // This is part of the data model, applied explicitly on commit — never inside a read or a save.
-    function applyInvariants() {
-        habits.forEach(h => {
-            const cat = (h.category || '').trim();
-            if (cat && cat !== UNCATEGORIZED_LABEL && !categories.includes(cat)) categories.push(cat);
-        });
-        habits.sort((a, b) => compareByName(a.name, b.name));
-        categories.sort(compareByName);
-    }
-
-    // Serializes each habit once: the same strings are compared with the previous commit
-    // (dirty checking -> per-habit revisions) and joined into the stored array.
-    function persist() {
-        const ids = new Set();
-        const parts = habits.map(h => {
-            const json = JSON.stringify(h);
-            ids.add(h.id);
-            if (habitJson.get(h.id) !== json) {
-                habitJson.set(h.id, json);
-                habitRevs.set(h.id, ++revCounter);
-            }
-            return json;
-        });
-        for (const id of habitJson.keys()) {
-            if (!ids.has(id)) {
-                habitJson.delete(id);
-                habitRevs.delete(id);
-            }
-        }
-        write(KEYS.habits, `[${parts.join(',')}]`);
-        write(KEYS.categories, JSON.stringify(categories));
-        const prefs = prefsProvider();
-        if (prefs) write(KEYS.prefs, JSON.stringify(prefs));
-    }
-
-    function commit() {
-        applyInvariants();
-        revision++;
-        persist();
-    }
-
-    function find(id) {
-        return habits.find(h => h.id === id) || null;
-    }
-
-    return {
-        // ---- reads ----
-        get habits() {
-            return habits;
-        },
-        get categories() {
-            return categories;
-        },
-        get revision() {
-            return revision;
-        },
-        habitRevision(id) {
-            return habitRevs.get(id);
-        },
-        find,
-        liveHabits() {
-            if (liveCache.revision !== revision) {
-                liveCache = { revision, list: Object.freeze(habits.filter(h => !isHabitArchived(h))) };
-            }
-            return liveCache.list;
-        },
-        snapshot() {
-            return { habits: JSON.parse(JSON.stringify(habits)), categories: JSON.parse(JSON.stringify(categories)) };
-        },
-
-        // ---- setup ----
-        configure(opts) {
-            if (opts.prefsProvider) prefsProvider = opts.prefsProvider;
-            if (opts.onPersistError) onPersistError = opts.onPersistError;
-        },
-        loadPrefs() {
-            const prefs = readJson(KEYS.prefs);
-            return prefs && typeof prefs === 'object' && !Array.isArray(prefs) ? prefs : null;
-        },
-        savePrefs(prefs) {
-            write(KEYS.prefs, JSON.stringify(prefs));
-        },
-        load(defaults) {
-            const cats = sanitizeCategories(readJson(KEYS.categories));
-            if (cats) categories = cats;
-            let loaded = null;
-            let raw = read(KEYS.habits);
-            if (raw === null) raw = read(LEGACY_HABITS_KEY);
-            if (raw !== null) {
-                let parsed;
-                try {
-                    parsed = JSON.parse(raw);
-                } catch (e) {
-                    console.warn('Ignoring damaged habits data', e);
-                }
-                if (Array.isArray(parsed)) {
-                    const seen = new Set();
-                    // a damaged entry is skipped on its own instead of discarding everything
-                    loaded = parsed
-                        .map((item, i) => {
-                            try {
-                                return sanitizeHabit(item, i, seen);
-                            } catch (e) {
-                                console.warn('Skipped a damaged habit', e);
-                                return null;
-                            }
-                        })
-                        .filter(Boolean);
-                }
-            }
-            habits = loaded || defaults().map(normalizeHabitGoal);
-            this.stripFuture(getDateKeyDaysAgo(0), false);
-            commit();
-        },
-
-        // ---- mutations: each one changes the data and commits ----
-        stripFuture(todayKey, save = true) {
-            let removed = false;
-            habits.forEach(h => {
-                if (h.slotHistory)
-                    Object.keys(h.slotHistory).forEach(k => {
-                        if (k > todayKey) {
-                            delete h.slotHistory[k];
-                            removed = true;
-                        }
-                    });
-                if (h.history && typeof h.history === 'object') {
-                    Object.keys(h.history).forEach(k => {
-                        if (k > todayKey) {
-                            delete h.history[k];
-                            removed = true;
-                        }
-                    });
-                }
-            });
-            if (removed && save) commit();
-        },
-        toggleDay(id, dateKey, slot) {
-            const habit = find(id);
-            if (!habit) return null;
-            if (!habit.history) habit.history = {};
-            const n = slotCount(getScheduleVersion(habit, dateKey));
-            let on, slotUsed;
-            if (typeof slot === 'number' && n > 1) {
-                // one occurrence; the day itself counts as done only when every occurrence is
-                const marks = Array.from({ length: n }, (_, i) => isSlotDone(habit, dateKey, i));
-                marks[slot] = !marks[slot];
-                on = marks[slot];
-                slotUsed = slot;
-                if (!habit.slotHistory) habit.slotHistory = {};
-                habit.slotHistory[dateKey] = marks;
-                habit.history[dateKey] = marks.every(Boolean);
-            } else {
-                on = !habit.history[dateKey];
-                habit.history[dateKey] = on;
-                if (habit.slotHistory) delete habit.slotHistory[dateKey];
-            }
-            commit();
-            return { on, slot: slotUsed };
-        },
-        markDay(ids, dateKey) {
-            habits.forEach(h => {
-                if (!ids.includes(h.id)) return;
-                if (!h.history) h.history = {};
-                h.history[dateKey] = true;
-                if (h.slotHistory) delete h.slotHistory[dateKey];
-            });
-            commit();
-        },
-        clearDay(ids, dateKey) {
-            habits.forEach(h => {
-                if (!ids.includes(h.id) || !hasAnyMarkOnDay(h, dateKey)) return;
-                if (!h.history) h.history = {};
-                h.history[dateKey] = false;
-                if (h.slotHistory) delete h.slotHistory[dateKey];
-            });
-            commit();
-        },
-        addHabit(draft) {
-            const habit = normalizeHabitGoal(draft);
-            habits.unshift(habit);
-            commit();
-            return habit;
-        },
-        updateHabit(id, fields, scheduleDef, scope) {
-            const habit = find(id);
-            if (!habit) return null;
-            Object.assign(habit, fields);
-            // scheduling fields only change through `schedule`
-            applyScheduleEdit(habit, scheduleDef, scope);
-            commit();
-            return habit;
-        },
-        deleteHabits(ids) {
-            habits = habits.filter(h => !ids.includes(h.id));
-            commit();
-        },
-        archiveHabits(ids, todayKey, tomorrowKey) {
-            let count = 0;
-            ids.forEach(id => {
-                const habit = find(id);
-                if (!habit || isHabitArchived(habit)) return;
-                habit.archivedSince = habit.history && habit.history[todayKey] ? tomorrowKey : todayKey;
-                count++;
-            });
-            if (count) commit();
-            return count;
-        },
-        restoreHabit(id, yesterdayKey) {
-            const habit = find(id);
-            if (!habit || !isHabitArchived(habit)) return false;
-            if (habit.archivedSince <= yesterdayKey) {
-                habit.pausedRanges = [...(habit.pausedRanges || []), [habit.archivedSince, yesterdayKey]];
-            }
-            delete habit.archivedSince;
-            commit();
-            return true;
-        },
-        moveHabits(ids, newCategory) {
-            habits.forEach(h => {
-                if (ids.includes(h.id)) h.category = newCategory;
-            });
-            commit();
-        },
-        addCategory(name) {
-            categories.push(name);
-            commit();
-        },
-        renameCategory(oldName, newName) {
-            const idx = categories.indexOf(oldName);
-            if (idx !== -1) categories[idx] = newName;
-            habits.forEach(h => {
-                if (h.category === oldName) h.category = newName;
-            });
-            commit();
-        },
-        deleteCategories(names) {
-            categories = categories.filter(c => !names.includes(c));
-            habits.forEach(h => {
-                if (names.includes((h.category || '').trim())) h.category = '';
-            });
-            commit();
-        },
-        restore(snapshot) {
-            habits = snapshot.habits.map(normalizeHabitGoal);
-            categories = snapshot.categories;
-            commit();
-        },
-        resetToDefaults(defaults) {
-            categories = [...DEFAULT_CATEGORIES];
-            habits = defaults().map(normalizeHabitGoal);
-            commit();
-        }
-    };
-})();
 
 // Preferences ride along with every data commit (as before) and are saved on their own for UI-only changes
 function currentPrefs() {
@@ -1170,60 +689,6 @@ function renderCategoryManagerItems() {
         return;
     }
     patchHTML(listEl, Store.categories.map(cat => buildCategoryItemRowHtml(cat)).join(''));
-}
-
-// Memoized per habit: recomputed only when that habit's data changed (its Store
-// revision) or the day rolled over. Results are frozen so callers can't alter the cache.
-const habitMemo = new Map(); // id -> { rev, today, obj, slots: Map }
-function memoForHabit(habit, slot, compute) {
-    const base = baseHabit(habit);
-    const rev = base && Store.habitRevision(base.id);
-    if (rev === undefined) return compute();
-    const t = todayDayNum();
-    let entry = habitMemo.get(base.id);
-    if (!entry || entry.rev !== rev || entry.today !== t || entry.obj !== base) {
-        entry = { rev, today: t, obj: base, slots: new Map() };
-        habitMemo.set(base.id, entry);
-    }
-    if (entry.slots.has(slot)) return entry.slots.get(slot);
-    const value = compute();
-    entry.slots.set(slot, typeof value === 'object' && value !== null ? Object.freeze(value) : value);
-    return entry.slots.get(slot);
-}
-
-function calculateStreak(habit) {
-    habit = baseHabit(habit);
-    if (!habit) return 0;
-    return memoForHabit(habit, 'streak', () => computeStreak(habit));
-}
-
-function getHabitStreakText(habit) {
-    const s = calculateStreak(habit);
-    const unit = getHabitStreakUnit(habit);
-    return s > 0 ? `רצף ${s} ${unit}` : '';
-}
-
-function getHabitStreakLongText(habit) {
-    const s = calculateStreak(habit);
-    const unit = getHabitStreakUnit(habit);
-    return s > 0 ? `רצף של ${s} ${unit}` : '';
-}
-
-// Per-day totals. For the full list (the common case: day strip, calendar, toggles) results
-// are cached per day until the data changes; filtered lists are computed directly.
-const dayStatsCache = { revision: -1, map: new Map() };
-function getDayStats(dayObj, habitList = Store.habits) {
-    if (habitList !== Store.habits) return computeDayStats(dayObj, habitList);
-    if (dayStatsCache.revision !== Store.revision) {
-        dayStatsCache.revision = Store.revision;
-        dayStatsCache.map.clear();
-    }
-    let stats = dayStatsCache.map.get(dayObj.key);
-    if (!stats) {
-        stats = Object.freeze(computeDayStats(dayObj, habitList));
-        dayStatsCache.map.set(dayObj.key, stats);
-    }
-    return stats;
 }
 
 function switchMainSection(section) {
@@ -2152,21 +1617,6 @@ function renderAnalyticsRangeControls() {
         endEl.max = getDateKeyDaysAgo(0);
     }
     scheduleScrollFades();
-}
-
-// Progress of one habit over a range. `elapsedOnly` limits the target to days that already passed.
-function getHabitRangeProgress(habit, days, elapsedOnly) {
-    habit = baseHabit(habit);
-    if (!days.length) return computeHabitRangeProgress(habit, days, elapsedOnly);
-    const slot = `range|${days[0].key}|${days[days.length - 1].key}|${days.length}|${elapsedOnly ? 1 : 0}`;
-    return memoForHabit(habit, slot, () => computeHabitRangeProgress(habit, days, elapsedOnly));
-}
-
-// Longest streak a habit ever had (days, or weeks for flexible habits).
-function calculateBestStreak(habit) {
-    habit = baseHabit(habit);
-    if (!habit) return 0;
-    return memoForHabit(habit, 'best', () => computeBestStreak(habit));
 }
 
 // ===== Analytics: filter (all / category / single habit) =====
@@ -4628,30 +4078,6 @@ function syncHabitTimeFields() {
     document.getElementById('habitDurationEach').classList.toggle('hidden', n < 2);
     updateHabitTimeHint();
     updateHabitModalSummaries();
-}
-
-// Other live habits whose time block overlaps this one on at least one shared weekday
-// Other live habits whose time block overlaps this one on a shared weekday (each day by its own time)
-// Index of every live, timed habit, rebuilt only when the data changes: a weekday bit mask
-// and, per weekday, its time blocks already converted to minutes. Checking a definition is then
-// one mask test per habit plus number comparisons — no string parsing in the loop.
-let overlapIndex = { revision: -1, entries: [] };
-function getOverlapIndex() {
-    if (overlapIndex.revision === Store.revision) return overlapIndex.entries;
-    const entries = buildOverlapIndex(getLiveHabits());
-    overlapIndex = { revision: Store.revision, entries };
-    return entries;
-}
-
-// The form asks twice per keystroke (hint + summary) with the same definition: remember the last answer
-let overlapMemo = { key: null, result: [] };
-function findTimeOverlaps(def, excludeId) {
-    if (!hasAnyTime(def)) return [];
-    const key = `${Store.revision}|${excludeId}|${def.duration}|${JSON.stringify(scheduleWeekdays(def).map(d => dayTimesRow(def, d)))}`;
-    if (overlapMemo.key === key) return overlapMemo.result;
-    const result = findOverlapsIn(getOverlapIndex(), def, excludeId);
-    overlapMemo = { key, result };
-    return result;
 }
 
 function getModalScheduleDef() {

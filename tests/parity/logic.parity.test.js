@@ -99,6 +99,11 @@ describe.skipIf(!HAS_MODERN)('logic parity on random data', () => {
             }
         };
         const n = legacy.Store.habits.length;
+        // the random data is rich enough to exercise the code (not a vacuous comparison)
+        expect(n).toBeGreaterThan(HABITS_PER_SEED * 0.8);
+        expect(legacy.Store.habits.some(h => legacy.calculateStreak(h) > 1)).toBe(true);
+        expect(legacy.Store.habits.some(h => h.schedule.length > 1)).toBe(true);
+        expect(legacy.Store.habits.some(h => h.archivedSince)).toBe(true);
         for (const today of TODAYS) {
             vi.setSystemTime(today);
             const tag = today.toISOString();
