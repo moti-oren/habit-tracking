@@ -1,4 +1,5 @@
 // Time of day: "HH:MM" strings, minutes, ranges and parts of the day.
+
 import { DAY_PARTS } from '../config/schedule.js';
 
 // ---- Time of day helpers ----

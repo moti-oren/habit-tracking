@@ -1,5 +1,6 @@
 // Calendar math on "YYYY-MM-DD" date keys: day numbers, today, week windows, day descriptors.
 // Pure: reads the clock, never the DOM. Its caches depend only on the date (see todayDayNum).
+
 import { MAX_RANGE_DAYS } from '../config/analytics.js';
 import { HEBREW_DAYS_FULL, HEBREW_DAYS_SHORT, HEBREW_MONTHS } from '../config/hebrew.js';
 
