@@ -4,7 +4,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { implementations, NOW, setNow } from '../../harness/impls.js';
 
 vi.useFakeTimers({ now: NOW });
-const IMPLS = await implementations(['core/format', 'core/analytics-range', 'core/schedule', 'core/habit']);
+const IMPLS = await implementations([
+    'core/format',
+    'core/analytics-range',
+    'core/schedule',
+    'core/habit',
+    'ui/dom/html'
+]);
 const iso = s => `⁦${s}⁩`;
 
 describe.each(IMPLS)('formatting (%s)', (_, impl) => {
@@ -87,6 +93,11 @@ describe.each(IMPLS)('formatting (%s)', (_, impl) => {
             'לילה טוב'
         ]);
         vi.setSystemTime(NOW);
+    });
+
+    it('isolates numbers and times for RTL text and HTML', () => {
+        expect(impl.isoNum('18–24')).toBe(iso('18–24'));
+        expect(impl.timeRangeHtml('06:00', 30, 'x')).toBe('<span dir="ltr" class="tabular-nums x">06:00–06:30</span>');
     });
 
     it('counts habits in words', () => {

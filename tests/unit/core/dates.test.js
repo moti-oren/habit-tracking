@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { implementations, NOW, setNow } from '../../harness/impls.js';
 
 vi.useFakeTimers({ now: NOW });
-const IMPLS = await implementations(['core/dates', 'core/time', 'core/format', 'ui/dom/html']);
+const IMPLS = await implementations(['core/dates', 'core/time']);
 
 describe.each(IMPLS)('dates (%s)', (_, impl) => {
     afterEach(() => vi.setSystemTime(NOW));
@@ -180,8 +180,6 @@ describe.each(IMPLS)('time of day (%s)', (_, impl) => {
         expect(impl.formatTimeRange('06:00', 0)).toBe('06:00');
         expect(impl.formatTimeRange('', 30)).toBe('');
         expect(impl.timeRangeText('06:00', 30)).toBe('⁦06:00–06:30⁩');
-        expect(impl.timeRangeHtml('06:00', 30, 'x')).toBe('<span dir="ltr" class="tabular-nums x">06:00–06:30</span>');
-        expect(impl.isoNum('18–24')).toBe('⁦18–24⁩');
     });
 
     it('turns a time into a block of at least one minute', () => {
