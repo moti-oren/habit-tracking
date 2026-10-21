@@ -20,7 +20,8 @@ const uiZones = [
     { target: `${UI}/components`, from: [`${UI}/shell`, `${UI}/app`, `${UI}/sections`, `${UI}/dialogs`] },
     { target: `${UI}/shell`, from: [`${UI}/app`, `${UI}/sections`, `${UI}/dialogs`] },
     {
-        target: [`${UI}/sections/**/!(actions|filters).js`, `${UI}/dialogs/**/render.js`],
+        // renderers: every section module except the action and interaction modules
+        target: [`${UI}/sections/**/!(actions|filters|drag-drop).js`, `${UI}/dialogs/**/render.js`],
         from: [
             `${UI}/app/**`,
             `${UI}/dialogs/**/!(render).js`,
