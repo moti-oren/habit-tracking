@@ -88,5 +88,10 @@ export default [
             globals: { ...globals.node }
         }
     },
+    {
+        // Unit and parity tests run in jsdom (and Playwright specs evaluate code in the page)
+        files: ['tests/**/*.js', 'e2e/**/*.js'],
+        languageOptions: { globals: { ...globals.node, ...globals.browser } }
+    },
     prettier
 ];
