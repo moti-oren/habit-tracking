@@ -2,6 +2,7 @@
 // module scope makes redundant). It is split into modules step by step; see docs/REFACTOR_PLAN.md.
 /* eslint-disable no-unused-vars -- dead locals are removed when each area is extracted */
 
+import { playFeedbackSound, suspendAudio } from './audio/feedback.js';
 import { ANALYTICS_PRESETS, MAX_RANGE_DAYS } from './config/analytics.js';
 import { UNCATEGORIZED_LABEL } from './config/categories.js';
 import { COLOR_OPTIONS, getColorMeta } from './config/colors.js';
@@ -31,7 +32,6 @@ import {
     formatDaySet,
     formatStartDateLabel,
     formatWeekRangeText,
-    getGreetingByHour,
     getHabitGoalLabel,
     getHabitStreakUnit,
     habitCountLabel,
@@ -84,198 +84,36 @@ import {
     getLiveHabits
 } from './store/selectors.js';
 import { Store } from './store/store.js';
+import {
+    closeCustomSelect,
+    enhanceSelect,
+    fireChange,
+    isCustomSelectOpen,
+    relabel,
+    watchValue,
+    wireCustomSelectDismiss
+} from './ui/components/custom-select.js';
+import { closeAllMenus, toggleMenu, wireMenus } from './ui/components/menus.js';
+import { getVisibleFocusables, hideModal, nudgeModal, showModal, topModal } from './ui/components/modal.js';
+import { setRevealOpen } from './ui/components/reveal.js';
+import { scheduleScrollFades, updateScrollFades } from './ui/components/scroll-fades.js';
+import { initSegPills, updateSegPill, updateSegPills } from './ui/components/segmented.js';
+import { showToast, wireToastPause } from './ui/components/toast.js';
+import { initTooltips } from './ui/components/tooltip.js';
+import { prefersReducedMotion, restartAnimationClass, restartAnimationClasses, shakeField } from './ui/dom/animate.js';
+import { animateOut, flashClassFor, flashHabits, withFlip } from './ui/dom/flip.js';
 import { escapeHtml, timeRangeHtml } from './ui/dom/html.js';
+import { CALENDAR_SVG, icon } from './ui/dom/icons.js';
+import { patchHTML } from './ui/dom/patch.js';
+import { renderGreeting } from './ui/shell/greeting.js';
+import { applySoundUI, toggleSound } from './ui/shell/sound.js';
+import { applyThemeUI, initDeviceTheme, toggleTheme, wireSystemTheme } from './ui/shell/theme.js';
 
-// One icon language for the whole UI: 24px stroke SVGs (emoji are kept only for habit icons)
-const ICON_PATHS = {
-    check: 'M5 13l4 4L19 7',
-    x: 'M6 18L18 6M6 6l12 12',
-    chevronDown: 'M19 9l-7 7-7-7',
-    arrowUp: 'M12 19V5m0 0l-6 6m6-6l6 6',
-    arrowDown: 'M12 5v14m0 0l6-6m-6 6l-6-6',
-    star: 'M11.48 3.5a.56.56 0 011.04 0l2.13 5.11 5.52.44c.5.04.7.66.32.98l-4.2 3.6 1.28 5.38a.56.56 0 01-.84.61L12 16.73l-4.73 2.89a.56.56 0 01-.84-.61l1.28-5.38-4.2-3.6a.56.56 0 01.32-.98l5.52-.44 2.13-5.11z'
-};
-function icon(name, cls = 'w-4 h-4', strokeWidth = 2.5) {
-    return `<svg class="${cls} shrink-0 inline-block" fill="none" stroke="currentColor" stroke-width="${strokeWidth}" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="${ICON_PATHS[name]}"/></svg>`;
-}
-
-const systemDarkQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
-app.isDarkMode = systemDarkQuery ? systemDarkQuery.matches : false;
-let audioCtx = null;
-
-// The audio context is created on the first sound, suspended while the tab is hidden
-// (no audio thread running in the background), and resumed by the next sound.
-function suspendAudio() {
-    if (audioCtx && audioCtx.state === 'running') audioCtx.suspend().catch(() => {});
-}
-
-function playFeedbackSound(type = 'check') {
-    if (!app.soundEnabled) return;
-    try {
-        if (!audioCtx) {
-            const AudioContext = window.AudioContext || window.webkitAudioContext;
-            audioCtx = new AudioContext();
-        }
-        if (audioCtx.state === 'suspended') {
-            audioCtx.resume().catch(() => {});
-        }
-        const now = audioCtx.currentTime;
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-
-        if (type === 'check') {
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(520, now);
-            osc.frequency.exponentialRampToValueAtTime(880, now + 0.09);
-            gain.gain.setValueAtTime(0.12, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.11);
-            osc.start(now);
-            osc.stop(now + 0.12);
-        } else if (type === 'uncheck') {
-            osc.type = 'triangle';
-            osc.frequency.setValueAtTime(400, now);
-            osc.frequency.exponentialRampToValueAtTime(260, now + 0.08);
-            gain.gain.setValueAtTime(0.08, now);
-            gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
-            osc.start(now);
-            osc.stop(now + 0.1);
-        } else if (type === 'celebrate') {
-            const notes = [523.25, 659.25, 783.99, 1046.5];
-            notes.forEach((freq, idx) => {
-                const o = audioCtx.createOscillator();
-                const g = audioCtx.createGain();
-                o.type = 'triangle';
-                o.connect(g);
-                g.connect(audioCtx.destination);
-                o.frequency.setValueAtTime(freq, now + idx * 0.06);
-                g.gain.setValueAtTime(0.1, now + idx * 0.06);
-                g.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.06 + 0.18);
-                o.start(now + idx * 0.06);
-                o.stop(now + idx * 0.06 + 0.19);
-            });
-        }
-    } catch (e) {}
-}
+initDeviceTheme();
 
 const prevRingPct = {}; // day key -> % shown in the day strip ring last time
 
-function applyThemeUI(dark) {
-    app.isDarkMode = !!dark;
-    const html = document.documentElement;
-    html.classList.toggle('dark', app.isDarkMode);
-    const themeBtn = document.getElementById('themeToggleBtn');
-    if (themeBtn) {
-        themeBtn.setAttribute('aria-pressed', String(app.isDarkMode));
-        themeBtn.setAttribute(
-            'aria-label',
-            app.isDarkMode ? 'מצב כהה פעיל. מעבר למצב בהיר' : 'מצב בהיר פעיל. מעבר למצב כהה'
-        );
-        themeBtn.title = app.isDarkMode ? 'מעבר למצב בהיר' : 'מעבר למצב כהה';
-    }
-    const container = document.getElementById('themeIconContainer');
-    if (container) {
-        container.className = app.isDarkMode ? 'text-amber-400' : 'text-slate-700';
-        container.innerHTML = app.isDarkMode
-            ? '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>'
-            : '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>';
-    }
-}
-
-function applySoundUI(enabled) {
-    app.soundEnabled = !!enabled;
-    const soundBtn = document.getElementById('soundToggleBtn');
-    if (soundBtn) {
-        soundBtn.setAttribute('aria-pressed', String(app.soundEnabled));
-        soundBtn.setAttribute(
-            'aria-label',
-            app.soundEnabled ? 'צלילי משוב פעילים. השתקה' : 'צלילי משוב מושתקים. הפעלה'
-        );
-        soundBtn.title = app.soundEnabled ? 'השתקת צלילים' : 'הפעלת צלילים';
-    }
-    const container = document.getElementById('soundIconContainer');
-    if (container) {
-        container.className = app.soundEnabled
-            ? 'text-indigo-600 dark:text-indigo-400'
-            : 'text-slate-500 dark:text-slate-400';
-        container.innerHTML = app.soundEnabled
-            ? '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>'
-            : '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/><path stroke-linecap="round" stroke-linejoin="round" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/></svg>';
-    }
-}
-
-// ===== Sliding pill: one background that glides to the active option of a segmented control =====
-// The active option is whichever child has aria-current="page", aria-selected="true" or aria-pressed="true".
-// Several controls are measured together: all DOM writes that change layout first, then every
-// read in one layout pass, then all the style writes (no read/write interleaving).
-function updateSegPills(containers) {
-    const items = [];
-    Array.from(containers).forEach(container => {
-        if (!container || !container.classList || !container.classList.contains('seg')) return;
-        let pill = container._pill;
-        if (!pill) {
-            pill = document.createElement('span');
-            pill.className = `seg-pill seg-pill--${container.dataset.seg || 'raised'}`;
-            pill.setAttribute('aria-hidden', 'true');
-            container._pill = pill;
-        }
-        if (pill.parentElement !== container) container.prepend(pill); // survives innerHTML re-renders
-        items.push({
-            container,
-            pill,
-            active: container.querySelector('[aria-current="page"], [aria-selected="true"], [aria-pressed="true"]')
-        });
-    });
-    // read
-    items.forEach(item => {
-        item.visible = !!item.active && item.container.offsetWidth !== 0;
-        if (item.visible) {
-            const a = item.active;
-            item.box = { w: a.offsetWidth, h: a.offsetHeight, x: a.offsetLeft, y: a.offsetTop };
-        }
-    });
-    // write
-    const firstPlacement = [];
-    items.forEach(({ pill, visible, box }) => {
-        if (!visible) {
-            pill.style.opacity = '0';
-            pill.dataset.ready = '';
-            return;
-        }
-        // first placement (or after being hidden): jump into place, don't slide in from the corner
-        if (!pill.dataset.ready) {
-            pill.classList.add('no-anim');
-            firstPlacement.push(pill);
-        }
-        pill.style.width = `${box.w}px`;
-        pill.style.height = `${box.h}px`;
-        pill.style.transform = `translate(${box.x}px, ${box.y}px)`;
-        pill.style.opacity = '1';
-    });
-    if (firstPlacement.length) {
-        void firstPlacement[0].offsetWidth; // one reflow for all of them
-        firstPlacement.forEach(pill => {
-            pill.classList.remove('no-anim');
-            pill.dataset.ready = '1';
-        });
-    }
-}
-
-function updateSegPill(container) {
-    updateSegPills([container]);
-}
-
-// Re-measure when a control appears (e.g. inside a modal that just opened) or the layout changes
-const segResizeObserver =
-    typeof ResizeObserver !== 'undefined'
-        ? new ResizeObserver(entries => updateSegPills(entries.map(e => e.target)))
-        : null;
-document.addEventListener('DOMContentLoaded', () => {
-    const segs = document.querySelectorAll('.seg');
-    updateSegPills(segs);
-    if (segResizeObserver) segs.forEach(el => segResizeObserver.observe(el));
-});
+initSegPills();
 
 function applyViewModeButtonsUI(mode) {
     const focusBtn = document.getElementById('viewModeFocusBtn');
@@ -489,65 +327,6 @@ function promptDeleteCategory(catName) {
     });
 }
 
-// ===== Modals: animated open/close, focus in and back out, Escape, Tab stays inside =====
-const openModalStack = [];
-const prefersReducedMotion = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-const FOCUSABLE =
-    'button:not([disabled]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-function getVisibleFocusables(root) {
-    return [...root.querySelectorAll(FOCUSABLE)].filter(el => el.getClientRects().length > 0 && !el.closest('.hidden'));
-}
-
-function showModal(el) {
-    if (!el) return;
-    clearTimeout(el._closeTimer);
-    const wasOpen = el.classList.contains('flex') && !el.classList.contains('is-closing');
-    el.classList.remove('is-closing', 'hidden');
-    el.classList.add('flex');
-    const idx = openModalStack.indexOf(el);
-    if (idx !== -1) openModalStack.splice(idx, 1);
-    openModalStack.push(el);
-    if (!wasOpen && !el.contains(document.activeElement)) el._returnFocus = document.activeElement;
-    requestAnimationFrame(() => {
-        if (el.contains(document.activeElement)) return;
-        const target = el.querySelector('[data-autofocus]') || getVisibleFocusables(el)[0];
-        if (target) target.focus({ preventScroll: true });
-    });
-}
-
-function hideModal(el) {
-    if (!el || el.classList.contains('hidden') || el.classList.contains('is-closing')) return;
-    const idx = openModalStack.indexOf(el);
-    if (idx !== -1) openModalStack.splice(idx, 1);
-    const focusWasInside = el.contains(document.activeElement) || document.activeElement === document.body;
-    const finish = () => {
-        el.classList.add('hidden');
-        el.classList.remove('flex', 'is-closing');
-    };
-    if (prefersReducedMotion()) {
-        finish();
-    } else {
-        el.classList.add('is-closing');
-        el._closeTimer = setTimeout(finish, 180);
-    }
-    const back = el._returnFocus;
-    el._returnFocus = null;
-    if (focusWasInside && back && document.contains(back) && back.getClientRects().length) {
-        back.focus({ preventScroll: true });
-    }
-}
-
-// A click on the dimmed area of a decision dialog doesn't dismiss it; the panel shakes instead
-function nudgeModal(el) {
-    const panel = el && el.querySelector('.modal-panel');
-    if (!panel || prefersReducedMotion()) return;
-    panel.classList.remove('is-shaking');
-    void panel.offsetWidth;
-    panel.classList.add('is-shaking');
-    setTimeout(() => panel.classList.remove('is-shaking'), 240);
-}
-
 const MODAL_CLOSERS = {
     habitModalBackdrop: () => closeHabitModal(),
     categoryModalBackdrop: () => closeCategoryManagerModal(),
@@ -555,27 +334,31 @@ const MODAL_CLOSERS = {
     confirmModalBackdrop: () => closeConfirmModal()
 };
 
-document.addEventListener('keydown', e => {
-    const top = openModalStack[openModalStack.length - 1];
-    if (!top || manage.drag.active) return;
-    if (e.key === 'Escape') {
-        if (openSelectState || document.querySelector('[data-menu-panel]:not(.hidden):not(.is-closing)')) return; // the open list closes first
-        e.preventDefault();
-        (MODAL_CLOSERS[top.id] || (() => hideModal(top)))();
-    } else if (e.key === 'Tab') {
-        const items = getVisibleFocusables(top);
-        if (items.length === 0) return;
-        const first = items[0],
-            last = items[items.length - 1];
-        if (e.shiftKey && (document.activeElement === first || !top.contains(document.activeElement))) {
+export function wireModalKeyboard() {
+    document.addEventListener('keydown', e => {
+        const top = topModal();
+        if (!top || manage.drag.active) return;
+        if (e.key === 'Escape') {
+            if (isCustomSelectOpen() || document.querySelector('[data-menu-panel]:not(.hidden):not(.is-closing)'))
+                return; // the open list closes first
             e.preventDefault();
-            last.focus();
-        } else if (!e.shiftKey && (document.activeElement === last || !top.contains(document.activeElement))) {
-            e.preventDefault();
-            first.focus();
+            (MODAL_CLOSERS[top.id] || (() => hideModal(top)))();
+        } else if (e.key === 'Tab') {
+            const items = getVisibleFocusables(top);
+            if (items.length === 0) return;
+            const first = items[0],
+                last = items[items.length - 1];
+            if (e.shiftKey && (document.activeElement === first || !top.contains(document.activeElement))) {
+                e.preventDefault();
+                last.focus();
+            } else if (!e.shiftKey && (document.activeElement === last || !top.contains(document.activeElement))) {
+                e.preventDefault();
+                first.focus();
+            }
         }
-    }
-});
+    });
+}
+wireModalKeyboard();
 
 function openCategoryManagerModal() {
     categoryManager.editingName = null;
@@ -730,21 +513,6 @@ function setViewMode(mode) {
     renderHabitsList();
 }
 
-// Restart CSS animations on several elements with a single forced reflow
-const RESTARTABLE_ANIMATIONS = ['slide-from-prev', 'slide-from-next', 'zoom-in', 'zoom-out', 'fade-in-quick'];
-function restartAnimationClasses(pairs) {
-    if (prefersReducedMotion()) return;
-    const list = pairs.filter(([el]) => el);
-    if (!list.length) return;
-    list.forEach(([el]) => el.classList.remove(...RESTARTABLE_ANIMATIONS));
-    void list[0][0].offsetWidth;
-    list.forEach(([el, cls]) => el.classList.add(cls));
-}
-
-function restartAnimationClass(el, cls) {
-    restartAnimationClasses([[el, cls]]);
-}
-
 function shiftWeek(delta) {
     const nextOffset = tracker.weekOffset + delta;
     if (nextOffset > 0) return;
@@ -878,7 +646,7 @@ function paintRangePreview(hoverKey) {
     });
 }
 
-(function wireRangePreview() {
+export function wireRangePreview() {
     const grid = document.getElementById('fullCalendarGrid');
     if (!grid) return;
     const keyFrom = e => {
@@ -888,7 +656,8 @@ function paintRangePreview(hoverKey) {
     grid.addEventListener('mouseover', e => paintRangePreview(keyFrom(e)));
     grid.addEventListener('focusin', e => paintRangePreview(keyFrom(e)));
     grid.addEventListener('mouseleave', () => paintRangePreview(null));
-})();
+}
+wireRangePreview();
 
 function handleCalendarDayClick(dateKey) {
     if (calendar.picker && calendar.picker.range) {
@@ -1441,74 +1210,6 @@ function shiftAnalyticsRange(dir) {
 function getAnalyticsDays() {
     ensureAnalyticsRange();
     return buildDaysForRange(analytics.range.start, analytics.range.end);
-}
-
-// ===== Targeted DOM updates =====
-// Renderers still describe a list as one HTML string, but only nodes that actually changed
-// are touched: unchanged cards keep their DOM node (and their focus, hover state and running
-// animations). A node whose own attributes changed is replaced whole, so CSS animation
-// classes on it restart exactly as they would on a fresh node.
-const patchTemplate = document.createElement('template');
-
-function sameAttributes(a, b) {
-    const attrs = a.attributes;
-    if (attrs.length !== b.attributes.length) return false;
-    for (let i = 0; i < attrs.length; i++) {
-        if (b.getAttribute(attrs[i].name) !== attrs[i].value) return false;
-    }
-    return true;
-}
-
-function morphChildren(parent, next) {
-    const oldNodes = Array.from(parent.childNodes);
-    const newNodes = Array.from(next.childNodes);
-    for (let i = 0; i < newNodes.length; i++) {
-        const neu = newNodes[i];
-        const old = oldNodes[i];
-        if (!old) {
-            parent.appendChild(neu);
-            continue;
-        }
-        if (old.isEqualNode(neu)) continue;
-        if (old.nodeType === 1 && neu.nodeType === 1 && old.tagName === neu.tagName && sameAttributes(old, neu)) {
-            morphChildren(old, neu);
-        } else if (old.nodeType === 3 && neu.nodeType === 3) {
-            old.nodeValue = neu.nodeValue;
-        } else {
-            parent.replaceChild(neu, old);
-        }
-    }
-    for (let i = newNodes.length; i < oldNodes.length; i++) parent.removeChild(oldNodes[i]);
-}
-
-// If the focused control was replaced, focus its successor (same action and arguments)
-const FOCUS_KEY_ATTRS = [
-    'id',
-    'data-action',
-    'data-id',
-    'data-key',
-    'data-slot',
-    'data-arg',
-    'data-cat',
-    'data-ctx',
-    'data-cal-key'
-];
-function focusSignature(el) {
-    const parts = FOCUS_KEY_ATTRS.filter(a => el.hasAttribute(a)).map(
-        a => `[${a}="${CSS.escape(el.getAttribute(a))}"]`
-    );
-    return parts.length ? parts.join('') : null;
-}
-
-function patchHTML(container, html) {
-    const active = document.activeElement;
-    const focusSel = active && active !== document.body && container.contains(active) ? focusSignature(active) : null;
-    patchTemplate.innerHTML = html;
-    morphChildren(container, patchTemplate.content);
-    if (focusSel && !active.isConnected) {
-        const successor = container.querySelector(focusSel);
-        if (successor) successor.focus({ preventScroll: true });
-    }
 }
 
 function renderAnalyticsRangeControls() {
@@ -2169,25 +1870,28 @@ function renderChartLegend(mode) {
 
 let lineChartResizeTimer = null;
 let resizeFrame = 0;
-window.addEventListener('resize', () => {
-    if (!resizeFrame) {
-        resizeFrame = requestAnimationFrame(() => {
-            resizeFrame = 0;
-            closeCustomSelect(false);
-            updateScrollFades();
-            positionAvgLine();
-        });
-    }
-    clearTimeout(lineChartResizeTimer);
-    lineChartResizeTimer = setTimeout(() => {
-        if (
-            app.currentMainSection === 'analytics' &&
-            (!document.getElementById('lineChartWrap').classList.contains('hidden') ||
-                !document.getElementById('habitGridWrap').classList.contains('hidden'))
-        )
-            renderAnalytics();
-    }, 150);
-});
+export function wireResize() {
+    window.addEventListener('resize', () => {
+        if (!resizeFrame) {
+            resizeFrame = requestAnimationFrame(() => {
+                resizeFrame = 0;
+                closeCustomSelect(false);
+                updateScrollFades();
+                positionAvgLine();
+            });
+        }
+        clearTimeout(lineChartResizeTimer);
+        lineChartResizeTimer = setTimeout(() => {
+            if (
+                app.currentMainSection === 'analytics' &&
+                (!document.getElementById('lineChartWrap').classList.contains('hidden') ||
+                    !document.getElementById('habitGridWrap').classList.contains('hidden'))
+            )
+                renderAnalytics();
+        }, 150);
+    });
+}
+wireResize();
 
 function widenFrom(id, pct, idx) {
     // memoised per render so the two calls above agree
@@ -2347,29 +2051,6 @@ function renderCategoryFilterBar(context = 'tracker') {
     }
 }
 
-// Open/close a .reveal block in place (no re-render), so the height change can animate
-function setRevealOpen(revealEl, toggleBtn, open, openText, closedText) {
-    if (!revealEl) return false;
-    revealEl.classList.toggle('is-open', open);
-    if (open) {
-        revealEl.removeAttribute('inert');
-        revealEl.classList.add('is-opening');
-        clearTimeout(revealEl._openingTimer);
-        revealEl._openingTimer = setTimeout(() => revealEl.classList.remove('is-opening'), 500);
-    } else {
-        revealEl.setAttribute('inert', '');
-        revealEl.classList.remove('is-opening');
-    }
-    if (toggleBtn) {
-        toggleBtn.setAttribute('aria-expanded', String(open));
-        const label = toggleBtn.querySelector('[data-toggle-text]');
-        if (label) label.textContent = open ? openText : closedText;
-        const chevron = toggleBtn.querySelector('[data-toggle-text] + svg');
-        if (chevron) chevron.classList.toggle('rotate-180', open);
-    }
-    return true;
-}
-
 function toggleUnscheduledGroup() {
     tracker.restGroupExpanded = !tracker.restGroupExpanded;
     if (
@@ -2385,167 +2066,7 @@ function toggleUnscheduledGroup() {
     }
 }
 
-// ===== Tooltip: one element, 300ms hover delay with a mouse; tap-to-show on chart cells with touch =====
-(function setupTooltips() {
-    const tip = document.createElement('div');
-    tip.id = 'appTooltip';
-    tip.setAttribute('role', 'tooltip');
-    tip.className = 'app-tooltip';
-    document.addEventListener('DOMContentLoaded', () => document.body.appendChild(tip));
-    let showTimer = null,
-        hideTimer = null,
-        current = null;
-
-    function show(target) {
-        const text = target.getAttribute('data-tip');
-        if (!text) return;
-        current = target;
-        const r = target.getBoundingClientRect(); // read (layout is clean here)
-        const vw = window.innerWidth;
-        tip.textContent = text; // writes
-        tip.classList.remove('is-visible');
-        tip.style.top = '-999px';
-        tip.style.left = '-999px';
-        const t = tip.getBoundingClientRect(); // the one forced layout: the tip's new size
-        let top = r.top - t.height - 8;
-        let below = false;
-        if (top < 8) {
-            top = r.bottom + 8;
-            below = true;
-        }
-        const left = Math.min(vw - t.width - 8, Math.max(8, r.left + r.width / 2 - t.width / 2));
-        tip.style.top = `${top}px`;
-        tip.style.left = `${left}px`;
-        tip.classList.toggle('is-below', below);
-        tip.classList.add('is-visible'); // layout above already flushed the hidden state
-    }
-    function hide() {
-        clearTimeout(showTimer);
-        current = null;
-        tip.classList.remove('is-visible');
-    }
-    document.addEventListener('pointerover', e => {
-        if (e.pointerType !== 'mouse') return;
-        const target = e.target.closest && e.target.closest('[data-tip]');
-        if (!target || target === current) return;
-        clearTimeout(showTimer);
-        // moving between neighbouring cells keeps the tooltip and just moves it
-        if (tip.classList.contains('is-visible')) show(target);
-        else showTimer = setTimeout(() => show(target), 300);
-    });
-    document.addEventListener('pointerout', e => {
-        if (e.pointerType !== 'mouse') return;
-        const target = e.target.closest && e.target.closest('[data-tip]');
-        if (!target) return;
-        const to = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('[data-tip]');
-        if (to) return;
-        hide();
-    });
-    document.addEventListener('pointerdown', e => {
-        if (e.pointerType === 'mouse') {
-            hide();
-            return;
-        }
-        const target = e.target.closest && e.target.closest('[data-tip-touch]');
-        if (!target) {
-            hide();
-            return;
-        }
-        show(target);
-        clearTimeout(hideTimer);
-        hideTimer = setTimeout(hide, 1800);
-    });
-    let scrollHidePending = false;
-    window.addEventListener(
-        'scroll',
-        () => {
-            if (scrollHidePending || !current) return;
-            scrollHidePending = true;
-            requestAnimationFrame(() => {
-                scrollHidePending = false;
-                hide();
-            });
-        },
-        { passive: true, capture: true }
-    );
-})();
-
-// ===== Layout moves (FLIP): cards that stay glide to their new place, new ones fade in =====
-const EASE_OUT_JS = 'cubic-bezier(0.22, 1, 0.36, 1)';
-function captureFlip() {
-    const map = new Map();
-    document.querySelectorAll('[data-flip-key]').forEach(el => {
-        const r = el.getBoundingClientRect();
-        if (r.width) map.set(el.dataset.flipKey, r);
-    });
-    return map;
-}
-function playFlip(before) {
-    if (prefersReducedMotion() || !Element.prototype.animate) return;
-    const measured = [...document.querySelectorAll('[data-flip-key]')].map(el => [el, el.getBoundingClientRect()]); // reads
-    measured.forEach(([el, r]) => {
-        // writes
-        if (!r.width) return;
-        const b = before.get(el.dataset.flipKey);
-        if (!b) {
-            el.animate(
-                [
-                    { opacity: 0, transform: 'scale(0.97)' },
-                    { opacity: 1, transform: 'none' }
-                ],
-                { duration: 220, easing: EASE_OUT_JS }
-            );
-            return;
-        }
-        const dx = b.left - r.left,
-            dy = b.top - r.top;
-        if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
-        el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], {
-            duration: 280,
-            easing: EASE_OUT_JS
-        });
-    });
-}
-function withFlip(mutate) {
-    const before = captureFlip();
-    mutate();
-    playFlip(before);
-}
-// Fade/shrink the cards of these habits away, then apply the change and let the rest close the gap
-function animateOut(ids, mutate) {
-    const els = ids
-        .flatMap(id => [...document.querySelectorAll(`[data-flip-key$="-${CSS.escape(id)}"]`)])
-        .filter(el => el.getClientRects().length);
-    if (els.length === 0 || prefersReducedMotion() || !Element.prototype.animate) {
-        withFlip(mutate);
-        return;
-    }
-    const fades = els.map(el =>
-        el.animate(
-            [
-                { opacity: 1, transform: 'none' },
-                { opacity: 0, transform: 'scale(0.96)' }
-            ],
-            { duration: 180, easing: 'cubic-bezier(0.4, 0, 1, 1)', fill: 'forwards' }
-        )
-    );
-    setTimeout(() => {
-        withFlip(mutate);
-        fades.forEach(a => a.cancel()); // nodes that were removed don't care; ones that stay become visible again
-    }, 180);
-}
-function flashHabits(ids) {
-    flashHabitIds = new Set(ids);
-    setTimeout(() => {
-        flashHabitIds = new Set();
-    }, 0);
-}
-
-// Habits that should briefly glow after the next render (just added, moved or restored)
-let flashHabitIds = new Set();
-function flashClassFor(id) {
-    return flashHabitIds.has(id) ? 'flash-highlight' : '';
-}
+initTooltips();
 
 // Time (or time range) of a card, plus its live state today: now / next / past
 function timeChipsHtml(habit, timeStatus) {
@@ -3211,41 +2732,7 @@ function renderManageSection() {
     );
 }
 
-// Small overflow (⋯) menus
-function closeAllMenus() {
-    document.querySelectorAll('[data-menu-panel]').forEach(panel => {
-        if (panel.getAttribute('role') === 'listbox') return; // custom selects close themselves
-        if (panel.classList.contains('hidden') || panel.classList.contains('is-closing')) return;
-        if (prefersReducedMotion()) {
-            panel.classList.add('hidden');
-            return;
-        }
-        panel.classList.add('is-closing');
-        panel._closeTimer = setTimeout(() => {
-            panel.classList.add('hidden');
-            panel.classList.remove('is-closing');
-        }, 100);
-    });
-    document.querySelectorAll('[aria-haspopup="menu"]').forEach(btn => btn.setAttribute('aria-expanded', 'false'));
-}
-
-function toggleMenu(event, menuId, trigger) {
-    event.stopPropagation();
-    const panel = document.getElementById(menuId);
-    if (!panel) return;
-    const wasOpen = !panel.classList.contains('hidden') && !panel.classList.contains('is-closing');
-    closeAllMenus();
-    if (!wasOpen) {
-        clearTimeout(panel._closeTimer);
-        panel.classList.remove('hidden', 'is-closing');
-        trigger.setAttribute('aria-expanded', 'true');
-    }
-}
-
-document.addEventListener('click', closeAllMenus);
-document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') closeAllMenus();
-});
+wireMenus();
 
 function handleManageCardClick(id) {
     if (manage.suppressNextCardClick) {
@@ -3543,19 +3030,22 @@ function detachDragListeners() {
     DRAG_LISTENERS.forEach(([type, fn, opts]) => document.removeEventListener(type, fn, opts));
 }
 
-document.addEventListener('pointerdown', e => {
-    manage.suppressNextCardClick = false;
-    const card = e.target.closest('[data-habit-card]');
-    if (!card || app.currentMainSection !== 'manage') return;
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    if (e.target.closest('[aria-haspopup], [data-menu-panel]')) return;
-    const p = { id: card.dataset.habitCard, x: e.clientX, y: e.clientY, pointerType: e.pointerType, timer: null };
-    if (e.pointerType !== 'mouse') {
-        p.timer = setTimeout(() => startHabitDrag(p.x, p.y), 380);
-    }
-    manage.drag.pending = p;
-    attachDragListeners();
-});
+export function wireHabitDrag() {
+    document.addEventListener('pointerdown', e => {
+        manage.suppressNextCardClick = false;
+        const card = e.target.closest('[data-habit-card]');
+        if (!card || app.currentMainSection !== 'manage') return;
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        if (e.target.closest('[aria-haspopup], [data-menu-panel]')) return;
+        const p = { id: card.dataset.habitCard, x: e.clientX, y: e.clientY, pointerType: e.pointerType, timer: null };
+        if (e.pointerType !== 'mouse') {
+            p.timer = setTimeout(() => startHabitDrag(p.x, p.y), 380);
+        }
+        manage.drag.pending = p;
+        attachDragListeners();
+    });
+}
+wireHabitDrag();
 
 // The ghost follows the pointer once per frame, however many move events arrive
 let dragFrame = 0;
@@ -4334,27 +3824,6 @@ function updateHabitModalSummaries() {
     }
 }
 
-function shakeField(el, keepError = true) {
-    if (!el) return;
-    if (keepError) {
-        el.classList.add('field-error');
-        el.setAttribute('aria-invalid', 'true');
-        el.addEventListener(
-            'input',
-            () => {
-                el.classList.remove('field-error');
-                el.removeAttribute('aria-invalid');
-            },
-            { once: true }
-        );
-    }
-    if (prefersReducedMotion()) return;
-    el.classList.remove('field-shake');
-    void el.offsetWidth;
-    el.classList.add('field-shake');
-    setTimeout(() => el.classList.remove('field-shake'), 300);
-}
-
 function selectModalIcon(emoji) {
     habitForm.icon = emoji;
     motion.justPicked = 'icon';
@@ -4726,106 +4195,9 @@ function runConfirm(which) {
     fn();
 }
 
-// ===== Toast: short entry, undo countdown bar, pauses while hovered or focused =====
-let toastTimer = null;
-let toastEndsAt = 0;
-let toastRemaining = 0;
-const TOAST_HIDDEN = ['opacity-0', 'translate-y-2', 'scale-[0.96]', 'lg:-translate-y-2', 'pointer-events-none'];
-const TOAST_SHOWN = ['opacity-100', 'translate-y-0', 'scale-100'];
+wireToastPause();
 
-function hideToast() {
-    const container = document.getElementById('toastContainer');
-    container.classList.add(...TOAST_HIDDEN);
-    container.classList.remove(...TOAST_SHOWN, 'pointer-events-auto', 'toast-paused');
-    document.getElementById('toastProgress').classList.remove('is-running');
-    undo.snapshot = null;
-    toastTimer = null;
-}
-
-function scheduleToastHide(ms) {
-    clearTimeout(toastTimer);
-    toastEndsAt = Date.now() + ms;
-    toastTimer = setTimeout(hideToast, ms);
-}
-
-function showToast(message, undoSnapshot = null) {
-    const container = document.getElementById('toastContainer');
-    const undoBtn = document.getElementById('toastUndoBtn');
-    const progress = document.getElementById('toastProgress');
-    const msgEl = document.getElementById('toastMessage');
-    const wasVisible = container.classList.contains('opacity-100');
-    msgEl.textContent = message;
-    // the toast is already up: swap the text softly instead of re-entering
-    if (wasVisible) msgEl.classList.remove('toast-text-in');
-
-    if (undoSnapshot) {
-        undo.snapshot = undoSnapshot;
-        undoBtn.classList.remove('hidden');
-        container.classList.remove('pointer-events-none');
-        container.classList.add('pointer-events-auto');
-    } else {
-        undo.snapshot = null;
-        undoBtn.classList.add('hidden');
-        container.classList.remove('pointer-events-auto');
-    }
-
-    container.classList.remove(...TOAST_HIDDEN, 'toast-paused');
-    if (!undoSnapshot) container.classList.add('pointer-events-none');
-    container.classList.add(...TOAST_SHOWN);
-
-    // restart the countdown bar only for toasts that can be undone
-    progress.classList.remove('is-running');
-    progress.classList.toggle('hidden', !undoSnapshot);
-    if (wasVisible || undoSnapshot) {
-        void container.offsetWidth; // one reflow restarts both animations below
-        if (wasVisible) msgEl.classList.add('toast-text-in');
-        if (undoSnapshot) progress.classList.add('is-running');
-    }
-
-    scheduleToastHide(undoSnapshot ? 5000 : 2400);
-}
-
-function pauseToast() {
-    const container = document.getElementById('toastContainer');
-    if (!toastTimer || !undo.snapshot) return;
-    clearTimeout(toastTimer);
-    toastTimer = null;
-    toastRemaining = Math.max(800, toastEndsAt - Date.now());
-    container.classList.add('toast-paused');
-}
-
-function resumeToast() {
-    const container = document.getElementById('toastContainer');
-    if (!container.classList.contains('toast-paused')) return;
-    container.classList.remove('toast-paused');
-    scheduleToastHide(toastRemaining);
-}
-
-(function wireToastPause() {
-    const container = document.getElementById('toastContainer');
-    container.addEventListener('mouseenter', pauseToast);
-    container.addEventListener('mouseleave', resumeToast);
-    container.addEventListener('focusin', pauseToast);
-    container.addEventListener('focusout', resumeToast);
-})();
-
-function toggleTheme() {
-    app.themeChosenByUser = true;
-    applyThemeUI(!app.isDarkMode);
-    savePrefs();
-}
-
-if (systemDarkQuery && systemDarkQuery.addEventListener) {
-    systemDarkQuery.addEventListener('change', e => {
-        if (!app.themeChosenByUser) applyThemeUI(e.matches);
-    });
-}
-
-function toggleSound() {
-    applySoundUI(!app.soundEnabled);
-    savePrefs();
-    showToast(app.soundEnabled ? 'צלילי משוב הופעלו' : 'צלילי משוב הושתקו');
-}
+wireSystemTheme();
 
 // ===== Rendering by section =====
 // A change makes every section stale, but only the visible one is rebuilt now; a hidden
@@ -4848,12 +4220,6 @@ const SECTION_RENDERERS = {
         renderManageSection();
     }
 };
-
-function renderGreeting() {
-    const el = document.getElementById('greetingLabel');
-    const text = getGreetingByHour();
-    if (el.textContent !== text) el.textContent = text;
-}
 
 function renderSection(section, { force = false, entry = false } = {}) {
     if (!force && !staleSections.has(section)) return;
@@ -4883,239 +4249,7 @@ function renderAll() {
     renderSection(app.currentMainSection);
 }
 
-// Fade the far (left, in RTL) edge of a horizontal scroller only while
-// there is still hidden content in that direction.
-function updateScrollFades() {
-    const els = [...document.querySelectorAll('.scroll-fade-x')];
-    const overflowing = els.map(el => el.scrollWidth - el.clientWidth - Math.abs(el.scrollLeft) > 4); // read all
-    els.forEach((el, i) => el.classList.toggle('is-overflowing', overflowing[i])); // then write
-}
-
-let scrollFadesFrame = 0;
-function scheduleScrollFades() {
-    if (scrollFadesFrame) return;
-    scrollFadesFrame = requestAnimationFrame(() => {
-        scrollFadesFrame = 0;
-        updateScrollFades();
-    });
-}
-
-// ===== Custom form controls (replace native <select> and date inputs) =====
-// The native element stays in the DOM (hidden) and keeps the value, so existing code that
-// reads/writes `.value` keeps working; the custom control mirrors it.
-const CHEVRON_SVG =
-    '<svg class="w-4 h-4 shrink-0 text-slate-500 dark:text-slate-400 transition-transform" data-chevron fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>';
-const CALENDAR_SVG =
-    '<svg class="w-4 h-4 shrink-0 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>';
-let openSelectState = null; // { select, trigger, panel }
-
-function watchValue(el, onChange) {
-    const proto = Object.getPrototypeOf(el);
-    const desc = Object.getOwnPropertyDescriptor(proto, 'value');
-    Object.defineProperty(el, 'value', {
-        configurable: true,
-        get() {
-            return desc.get.call(this);
-        },
-        set(v) {
-            desc.set.call(this, v);
-            onChange();
-        }
-    });
-}
-
-function fireChange(el) {
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-}
-
-function relabel(nativeId, triggerId) {
-    document.querySelectorAll(`label[for="${nativeId}"]`).forEach(l => l.setAttribute('for', triggerId));
-}
-
-function enhanceSelect(select) {
-    if (select.dataset.enhanced) return;
-    select.dataset.enhanced = '1';
-    const trigger = document.createElement('button');
-    trigger.type = 'button';
-    trigger.id = `${select.id}_trigger`;
-    trigger.className = select.className + ' flex items-center justify-between gap-2 text-right';
-    trigger.setAttribute('aria-haspopup', 'listbox');
-    trigger.setAttribute('aria-expanded', 'false');
-    trigger.innerHTML = `<span class="truncate min-w-0" data-label></span>${CHEVRON_SVG}`;
-    select.classList.add('hidden');
-    select.tabIndex = -1;
-    select.after(trigger);
-    relabel(select.id, trigger.id);
-
-    const sync = () => {
-        const opt = select.options[select.selectedIndex];
-        trigger.querySelector('[data-label]').textContent = opt ? opt.textContent : '';
-        if (openSelectState && openSelectState.select === select) renderSelectPanel();
-    };
-    watchValue(select, sync);
-    new MutationObserver(sync).observe(select, { childList: true, subtree: true });
-    select.addEventListener('change', sync);
-    sync();
-
-    trigger.addEventListener('click', e => {
-        e.stopPropagation();
-        if (openSelectState && openSelectState.select === select) closeCustomSelect(true);
-        else openCustomSelect(select, trigger);
-    });
-    trigger.addEventListener('keydown', e => {
-        if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(e.key)) {
-            e.preventDefault();
-            openCustomSelect(select, trigger);
-        }
-    });
-}
-
-function openCustomSelect(select, trigger) {
-    closeAllMenus();
-    closeCustomSelect(false);
-    const panel = document.createElement('div');
-    panel.setAttribute('role', 'listbox');
-    panel.setAttribute('data-menu-panel', '');
-    panel.setAttribute('aria-labelledby', trigger.id);
-    panel.className =
-        'fixed z-[80] p-1 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-xl overflow-y-auto overscroll-contain';
-    panel.addEventListener('click', e => e.stopPropagation());
-    panel.addEventListener('keydown', e => {
-        if (openSelectState && openSelectState.panel === panel) handleSelectPanelKeys(e);
-    });
-    document.body.appendChild(panel);
-    openSelectState = { select, trigger, panel };
-    trigger.setAttribute('aria-expanded', 'true');
-    trigger.querySelector('[data-chevron]').classList.add('rotate-180');
-    renderSelectPanel();
-    positionSelectPanel();
-    const current = panel.querySelector('[aria-selected="true"]') || panel.querySelector('[role="option"]');
-    if (current) {
-        current.focus();
-        current.scrollIntoView({ block: 'nearest' });
-    }
-}
-
-function renderSelectPanel() {
-    const { select, panel } = openSelectState;
-    const optionHtml = opt => {
-        const sel = opt.value === select.value;
-        return `<button type="button" role="option" aria-selected="${sel}" data-value="${escapeHtml(opt.value)}" class="w-full flex items-center justify-between gap-3 text-right px-3 py-2 rounded-lg text-sm transition focus:outline-none focus:bg-slate-100 dark:focus:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 ${
-            sel ? 'font-bold text-indigo-600 dark:text-indigo-400' : 'font-normal text-slate-700 dark:text-slate-200'
-        }"><span class="truncate">${escapeHtml(opt.textContent)}</span>${sel ? '<svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>' : ''}</button>`;
-    };
-    let html = '';
-    [...select.children].forEach(child => {
-        if (child.tagName === 'OPTGROUP') {
-            html += `<div class="px-3 pt-2.5 pb-1 text-xs font-semibold text-slate-500 dark:text-slate-400">${escapeHtml(child.label)}</div>`;
-            html += [...child.children].map(optionHtml).join('');
-        } else if (child.tagName === 'OPTION') {
-            html += optionHtml(child);
-        }
-    });
-    panel.innerHTML = html;
-    panel.querySelectorAll('[role="option"]').forEach(btn => {
-        btn.addEventListener('click', () => {
-            if (openSelectState && openSelectState.panel === panel) chooseSelectOption(btn.dataset.value);
-        });
-    });
-}
-
-function positionSelectPanel() {
-    if (!openSelectState) return;
-    const { trigger, panel } = openSelectState;
-    const r = trigger.getBoundingClientRect();
-    const vw = window.innerWidth,
-        vh = window.innerHeight;
-    const width = Math.min(Math.max(r.width, 200), vw - 16);
-    const right = Math.min(Math.max(8, vw - r.right), vw - width - 8); // align to the trigger's right edge (RTL)
-    panel.style.width = `${width}px`;
-    panel.style.right = `${right}px`;
-    panel.style.left = 'auto';
-    const spaceBelow = vh - r.bottom - 8,
-        spaceAbove = r.top - 8;
-    const desired = Math.min(panel.scrollHeight, 288);
-    if (spaceBelow >= Math.min(desired, 200) || spaceBelow >= spaceAbove) {
-        panel.style.top = `${r.bottom + 6}px`;
-        panel.style.bottom = 'auto';
-        panel.style.transformOrigin = 'top right';
-        panel.style.maxHeight = `${Math.max(120, Math.min(288, spaceBelow - 6))}px`;
-    } else {
-        panel.style.bottom = `${vh - r.top + 6}px`;
-        panel.style.top = 'auto';
-        panel.style.transformOrigin = 'bottom right';
-        panel.style.maxHeight = `${Math.max(120, Math.min(288, spaceAbove - 6))}px`;
-    }
-}
-
-function chooseSelectOption(value) {
-    const { select } = openSelectState;
-    const changed = select.value !== value;
-    select.value = value;
-    closeCustomSelect(true);
-    if (changed) fireChange(select);
-}
-
-function closeCustomSelect(refocus) {
-    if (!openSelectState) return;
-    const { trigger, panel } = openSelectState;
-    panel.inert = true; // a list that is fading out takes no clicks or keys
-    if (prefersReducedMotion()) {
-        panel.remove();
-    } else {
-        panel.classList.add('is-closing');
-        setTimeout(() => panel.remove(), 100);
-    }
-    trigger.setAttribute('aria-expanded', 'false');
-    trigger.querySelector('[data-chevron]').classList.remove('rotate-180');
-    openSelectState = null;
-    if (refocus) trigger.focus();
-}
-
-function handleSelectPanelKeys(e) {
-    const opts = [...openSelectState.panel.querySelectorAll('[role="option"]')];
-    const idx = opts.indexOf(document.activeElement);
-    if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        (opts[idx + 1] || opts[0]).focus();
-    } else if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        (opts[idx - 1] || opts[opts.length - 1]).focus();
-    } else if (e.key === 'Home') {
-        e.preventDefault();
-        opts[0].focus();
-    } else if (e.key === 'End') {
-        e.preventDefault();
-        opts[opts.length - 1].focus();
-    } else if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
-        closeCustomSelect(true);
-    } else if (e.key === 'Tab') {
-        closeCustomSelect(false);
-    } else if (e.key.length === 1 && /\S/.test(e.key)) {
-        const start = idx + 1;
-        const hit = [...opts.slice(start), ...opts.slice(0, start)].find(
-            o =>
-                o.textContent
-                    .trim()
-                    .replace(/^\S+\s/, '')
-                    .startsWith(e.key) || o.textContent.trim().startsWith(e.key)
-        );
-        if (hit) hit.focus();
-    }
-}
-
-// Clicks elsewhere, scrolling outside the panel, or resizing close an open list
-document.addEventListener('click', () => closeCustomSelect(false));
-document.addEventListener(
-    'scroll',
-    e => {
-        if (openSelectState && !openSelectState.panel.contains(e.target)) closeCustomSelect(false);
-    },
-    { capture: true, passive: true }
-);
+wireCustomSelectDismiss();
 
 function enhanceDateInput(input, title, customOpen) {
     if (input.dataset.enhanced) return;
@@ -5341,45 +4475,51 @@ function runAlongPath(e, attr, table) {
 // click: the innermost element with an action handles it. An ancestor marked
 // data-stop-propagation (an open menu panel) keeps the click from outer actions and
 // from the document-level "close menus" listeners.
-document.body.addEventListener('click', e => {
-    let handled = false;
-    for (let el = e.target; el && el !== document.body && el.nodeType === 1; el = el.parentElement) {
-        if (el.hasAttribute('data-stop-propagation')) {
-            e.stopPropagation();
-            return;
+export function wireDelegatedEvents() {
+    document.body.addEventListener('click', e => {
+        let handled = false;
+        for (let el = e.target; el && el !== document.body && el.nodeType === 1; el = el.parentElement) {
+            if (el.hasAttribute('data-stop-propagation')) {
+                e.stopPropagation();
+                return;
+            }
+            if (!handled && el.dataset.action) {
+                handled = true;
+                const fn = ClickActions[el.dataset.action];
+                if (fn && !el.disabled) fn(el, e);
+            }
         }
-        if (!handled && el.dataset.action) {
-            handled = true;
+    });
+    document.body.addEventListener('change', e => runAlongPath(e, 'data-change', ChangeActions));
+    document.body.addEventListener('input', e => runAlongPath(e, 'data-input', InputActions));
+    document.body.addEventListener('submit', e => runAlongPath(e, 'data-submit', SubmitActions));
+    document.body.addEventListener('keydown', e => {
+        runAlongPath(e, 'data-keydown', KeyActions);
+        // role="button" elements: Enter / Space act like a click on the element itself
+        const el = e.target;
+        if ((e.key === 'Enter' || e.key === ' ') && el.nodeType === 1 && el.hasAttribute('data-key-activate')) {
             const fn = ClickActions[el.dataset.action];
-            if (fn && !el.disabled) fn(el, e);
+            if (!fn) return;
+            e.preventDefault();
+            fn(el, e);
         }
-    }
-});
-document.body.addEventListener('change', e => runAlongPath(e, 'data-change', ChangeActions));
-document.body.addEventListener('input', e => runAlongPath(e, 'data-input', InputActions));
-document.body.addEventListener('submit', e => runAlongPath(e, 'data-submit', SubmitActions));
-document.body.addEventListener('keydown', e => {
-    runAlongPath(e, 'data-keydown', KeyActions);
-    // role="button" elements: Enter / Space act like a click on the element itself
-    const el = e.target;
-    if ((e.key === 'Enter' || e.key === ' ') && el.nodeType === 1 && el.hasAttribute('data-key-activate')) {
-        const fn = ClickActions[el.dataset.action];
-        if (!fn) return;
-        e.preventDefault();
-        fn(el, e);
-    }
-});
+    });
+}
+wireDelegatedEvents();
 
 // Keeps now / next / past current: refresh the daily list once a minute while it is on screen
-setInterval(() => {
-    if (document.hidden) return;
-    if (app.currentMainSection !== 'tracker' || tracker.viewMode !== 'focus') return;
-    if (tracker.selectedDateKey !== getDateKeyDaysAgo(0)) return;
-    const modal = document.getElementById('habitModalBackdrop');
-    if (modal && !modal.classList.contains('hidden')) return;
-    if (!Store.habits.some(h => hasAnyTime(habitOn(h, tracker.selectedDateKey)))) return;
-    renderHabitsList();
-}, 60000);
+export function startMinuteRefresh() {
+    setInterval(() => {
+        if (document.hidden) return;
+        if (app.currentMainSection !== 'tracker' || tracker.viewMode !== 'focus') return;
+        if (tracker.selectedDateKey !== getDateKeyDaysAgo(0)) return;
+        const modal = document.getElementById('habitModalBackdrop');
+        if (modal && !modal.classList.contains('hidden')) return;
+        if (!Store.habits.some(h => hasAnyTime(habitOn(h, tracker.selectedDateKey)))) return;
+        renderHabitsList();
+    }, 60000);
+}
+startMinuteRefresh();
 
 window.addEventListener('DOMContentLoaded', () => {
     enhanceFormControls();
