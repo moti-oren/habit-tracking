@@ -18,7 +18,6 @@ import {
     dowOfDayNum,
     formatDateKey,
     getDateKeyDaysAgo,
-    getWindow7Days,
     isFutureDateKey,
     isValidDateKey,
     parseDateKeyLocal,
@@ -63,6 +62,16 @@ import { compareByName } from './core/sort.js';
 import { getWeeklyCountForHabit, getWeeklyGoalForHabit } from './core/stats.js';
 import { getGraphemes } from './core/text.js';
 import { dayPartOf, timeRangeText, timeToMinutes } from './core/time.js';
+import { analytics, ensureAnalyticsRange, restoreAnalyticsRange } from './state/analytics.js';
+import { app } from './state/app.js';
+import { calendar } from './state/calendar.js';
+import { categoryManager } from './state/categories.js';
+import { habitForm } from './state/habit-form.js';
+import { manage } from './state/manage.js';
+import { motion } from './state/motion.js';
+import { currentPrefs, savePrefs } from './state/prefs.js';
+import { setWeek, tracker } from './state/tracker.js';
+import { createUndoSnapshot, undo } from './state/undo.js';
 import { getDefaultHabits } from './store/sample-habits.js';
 import {
     calculateBestStreak,
@@ -90,16 +99,9 @@ function icon(name, cls = 'w-4 h-4', strokeWidth = 2.5) {
     return `<svg class="${cls} shrink-0 inline-block" fill="none" stroke="currentColor" stroke-width="${strokeWidth}" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="${ICON_PATHS[name]}"/></svg>`;
 }
 
-let soundEnabled = true;
 const systemDarkQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
-let isDarkMode = systemDarkQuery ? systemDarkQuery.matches : false;
-let themeChosenByUser = false; // until the user toggles, the app follows the device theme
+app.isDarkMode = systemDarkQuery ? systemDarkQuery.matches : false;
 let audioCtx = null;
-let weekOffset = 0;
-let currentMainSection = 'tracker'; // 'tracker' | 'analytics' | 'manage'
-let calendarViewYear = new Date().getFullYear();
-let calendarViewMonth = new Date().getMonth();
-let calendarViewMode = 'month'; // 'month' | 'year'
 
 // The audio context is created on the first sound, suspended while the tab is hidden
 // (no audio thread running in the background), and resumed by the next sound.
@@ -108,7 +110,7 @@ function suspendAudio() {
 }
 
 function playFeedbackSound(type = 'check') {
-    if (!soundEnabled) return;
+    if (!app.soundEnabled) return;
     try {
         if (!audioCtx) {
             const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -157,62 +159,47 @@ function playFeedbackSound(type = 'check') {
     } catch (e) {}
 }
 
-let weekDays = getWindow7Days(0);
-let selectedDateKey = getDateKeyDaysAgo(0);
-let lastKnownTodayKey = getDateKeyDaysAgo(0);
-let currentViewMode = 'focus';
-let trackerSelectedCategory = 'הכל';
-let manageSelectedCategory = 'הכל';
-let unscheduledSectionExpanded = false;
-const focusOrderCache = { key: null, ids: [] };
-let lastToggledHabitId = null;
-// Motion hints for the next render only: what just changed, so only that animates
-let lastToggle = null; // { id, key, on }
-let celebrateDayKey = null; // a day that just became 100%
 const prevRingPct = {}; // day key -> % shown in the day strip ring last time
-let lastActionUndoSnapshot = null;
-let selectedModalIcon = ICON_OPTIONS[0].emoji;
-let selectedModalColor = COLOR_OPTIONS[0].id;
-let selectedModalGoalType = 'daily';
-let selectedModalFixedDays = [0, 2, 4];
-let editingCategoryName = null;
 
 function applyThemeUI(dark) {
-    isDarkMode = !!dark;
+    app.isDarkMode = !!dark;
     const html = document.documentElement;
-    html.classList.toggle('dark', isDarkMode);
+    html.classList.toggle('dark', app.isDarkMode);
     const themeBtn = document.getElementById('themeToggleBtn');
     if (themeBtn) {
-        themeBtn.setAttribute('aria-pressed', String(isDarkMode));
+        themeBtn.setAttribute('aria-pressed', String(app.isDarkMode));
         themeBtn.setAttribute(
             'aria-label',
-            isDarkMode ? 'מצב כהה פעיל. מעבר למצב בהיר' : 'מצב בהיר פעיל. מעבר למצב כהה'
+            app.isDarkMode ? 'מצב כהה פעיל. מעבר למצב בהיר' : 'מצב בהיר פעיל. מעבר למצב כהה'
         );
-        themeBtn.title = isDarkMode ? 'מעבר למצב בהיר' : 'מעבר למצב כהה';
+        themeBtn.title = app.isDarkMode ? 'מעבר למצב בהיר' : 'מעבר למצב כהה';
     }
     const container = document.getElementById('themeIconContainer');
     if (container) {
-        container.className = isDarkMode ? 'text-amber-400' : 'text-slate-700';
-        container.innerHTML = isDarkMode
+        container.className = app.isDarkMode ? 'text-amber-400' : 'text-slate-700';
+        container.innerHTML = app.isDarkMode
             ? '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>'
             : '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>';
     }
 }
 
 function applySoundUI(enabled) {
-    soundEnabled = !!enabled;
+    app.soundEnabled = !!enabled;
     const soundBtn = document.getElementById('soundToggleBtn');
     if (soundBtn) {
-        soundBtn.setAttribute('aria-pressed', String(soundEnabled));
-        soundBtn.setAttribute('aria-label', soundEnabled ? 'צלילי משוב פעילים. השתקה' : 'צלילי משוב מושתקים. הפעלה');
-        soundBtn.title = soundEnabled ? 'השתקת צלילים' : 'הפעלת צלילים';
+        soundBtn.setAttribute('aria-pressed', String(app.soundEnabled));
+        soundBtn.setAttribute(
+            'aria-label',
+            app.soundEnabled ? 'צלילי משוב פעילים. השתקה' : 'צלילי משוב מושתקים. הפעלה'
+        );
+        soundBtn.title = app.soundEnabled ? 'השתקת צלילים' : 'הפעלת צלילים';
     }
     const container = document.getElementById('soundIconContainer');
     if (container) {
-        container.className = soundEnabled
+        container.className = app.soundEnabled
             ? 'text-indigo-600 dark:text-indigo-400'
             : 'text-slate-500 dark:text-slate-400';
-        container.innerHTML = soundEnabled
+        container.innerHTML = app.soundEnabled
             ? '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>'
             : '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/><path stroke-linecap="round" stroke-linejoin="round" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/></svg>';
     }
@@ -308,22 +295,6 @@ function applyViewModeButtonsUI(mode) {
     updateSegPill(focusBtn.parentElement);
 }
 
-// Preferences ride along with every data commit (as before) and are saved on their own for UI-only changes
-function currentPrefs() {
-    return {
-        ...(themeChosenByUser ? { isDarkMode } : {}),
-        soundEnabled,
-        currentViewMode,
-        currentMainSection,
-        analyticsRange: analyticsRangeState,
-        analyticsFilter
-    };
-}
-
-function savePrefs() {
-    Store.savePrefs(currentPrefs());
-}
-
 // Storage can be full or blocked (private mode, quota). The data stays in memory for this
 // session, and the warning is shown after the action's own message so it isn't overwritten.
 function handlePersistError(kind) {
@@ -341,50 +312,42 @@ function loadState() {
     const prefs = Store.loadPrefs();
     if (prefs) {
         if (typeof prefs.isDarkMode === 'boolean') {
-            isDarkMode = prefs.isDarkMode;
-            themeChosenByUser = true;
+            app.isDarkMode = prefs.isDarkMode;
+            app.themeChosenByUser = true;
         }
-        if (typeof prefs.soundEnabled === 'boolean') soundEnabled = prefs.soundEnabled;
+        if (typeof prefs.soundEnabled === 'boolean') app.soundEnabled = prefs.soundEnabled;
         if (prefs.currentViewMode === 'focus' || prefs.currentViewMode === 'grid') {
-            currentViewMode = prefs.currentViewMode;
+            tracker.viewMode = prefs.currentViewMode;
         }
         if (['tracker', 'analytics', 'manage'].includes(prefs.currentMainSection)) {
-            currentMainSection = prefs.currentMainSection;
+            app.currentMainSection = prefs.currentMainSection;
         }
         restoreAnalyticsRange(prefs.analyticsRange);
-        if (typeof prefs.analyticsFilter === 'string') analyticsFilter = prefs.analyticsFilter;
+        if (typeof prefs.analyticsFilter === 'string') analytics.filter = prefs.analyticsFilter;
     }
 
     // Always open on Today (reset weekOffset & selectedDateKey, and reset filters to 'הכל')
-    weekOffset = 0;
-    weekDays = getWindow7Days(0);
-    selectedDateKey = getDateKeyDaysAgo(0);
-    lastKnownTodayKey = selectedDateKey;
-    trackerSelectedCategory = 'הכל';
-    manageSelectedCategory = 'הכל';
+    setWeek(0);
+    tracker.selectedDateKey = getDateKeyDaysAgo(0);
+    tracker.lastKnownTodayKey = tracker.selectedDateKey;
+    tracker.selectedCategory = 'הכל';
+    manage.selectedCategory = 'הכל';
 
     ensureAnalyticsRange(); // concrete dates from the start, even before analytics is first drawn
 
-    applyThemeUI(isDarkMode);
-    applySoundUI(soundEnabled);
-    applyViewModeButtonsUI(currentViewMode);
+    applyThemeUI(app.isDarkMode);
+    applySoundUI(app.soundEnabled);
+    applyViewModeButtonsUI(tracker.viewMode);
 
     Store.load(getDefaultHabits);
 }
 
-function createUndoSnapshot() {
-    return {
-        data: Store.snapshot(),
-        trackerSelectedCategory,
-        manageSelectedCategory
-    };
-}
 function triggerToastUndo() {
-    if (!lastActionUndoSnapshot) return;
-    const snap = lastActionUndoSnapshot;
-    lastActionUndoSnapshot = null;
-    trackerSelectedCategory = snap.trackerSelectedCategory || 'הכל';
-    manageSelectedCategory = snap.manageSelectedCategory || 'הכל';
+    if (!undo.snapshot) return;
+    const snap = undo.snapshot;
+    undo.snapshot = null;
+    tracker.selectedCategory = snap.trackerSelectedCategory || 'הכל';
+    manage.selectedCategory = snap.manageSelectedCategory || 'הכל';
     Store.restore(snap.data);
     populateCategorySelectDropdown();
     withFlip(() => renderAll());
@@ -394,11 +357,10 @@ function triggerToastUndo() {
 
 function checkDayRollover() {
     const nowTodayKey = getDateKeyDaysAgo(0);
-    if (nowTodayKey !== lastKnownTodayKey) {
-        lastKnownTodayKey = nowTodayKey;
-        weekOffset = 0;
-        weekDays = getWindow7Days(0);
-        selectedDateKey = nowTodayKey;
+    if (nowTodayKey !== tracker.lastKnownTodayKey) {
+        tracker.lastKnownTodayKey = nowTodayKey;
+        setWeek(0);
+        tracker.selectedDateKey = nowTodayKey;
         Store.stripFuture(nowTodayKey);
         renderAll();
     }
@@ -451,7 +413,7 @@ function handleModalAddCategory(event) {
 }
 
 function startCategoryRename(catName) {
-    editingCategoryName = catName;
+    categoryManager.editingName = catName;
     renderManageSection();
     renderCategoryManagerItems();
     setTimeout(() => {
@@ -464,7 +426,7 @@ function startCategoryRename(catName) {
 }
 
 function cancelCategoryRename() {
-    editingCategoryName = null;
+    categoryManager.editingName = null;
     renderManageSection();
     renderCategoryManagerItems();
 }
@@ -488,13 +450,13 @@ function saveCategoryRename(oldName) {
         return;
     }
 
-    if (trackerSelectedCategory === oldName) {
-        trackerSelectedCategory = newName;
+    if (tracker.selectedCategory === oldName) {
+        tracker.selectedCategory = newName;
     }
-    if (manageSelectedCategory === oldName) {
-        manageSelectedCategory = newName;
+    if (manage.selectedCategory === oldName) {
+        manage.selectedCategory = newName;
     }
-    editingCategoryName = null;
+    categoryManager.editingName = null;
     Store.renameCategory(oldName, newName);
     populateCategorySelectDropdown(newName);
     renderAll();
@@ -512,13 +474,13 @@ function promptDeleteCategory(catName) {
 
     openConfirmModal('מחיקת קטגוריה?', msg, () => {
         const snapshot = createUndoSnapshot();
-        if (trackerSelectedCategory === catName) {
-            trackerSelectedCategory = 'הכל';
+        if (tracker.selectedCategory === catName) {
+            tracker.selectedCategory = 'הכל';
         }
-        if (manageSelectedCategory === catName) {
-            manageSelectedCategory = 'הכל';
+        if (manage.selectedCategory === catName) {
+            manage.selectedCategory = 'הכל';
         }
-        editingCategoryName = null;
+        categoryManager.editingName = null;
         Store.deleteCategories([catName]);
         populateCategorySelectDropdown();
         renderAll();
@@ -595,7 +557,7 @@ const MODAL_CLOSERS = {
 
 document.addEventListener('keydown', e => {
     const top = openModalStack[openModalStack.length - 1];
-    if (!top || habitDragState.active) return;
+    if (!top || manage.drag.active) return;
     if (e.key === 'Escape') {
         if (openSelectState || document.querySelector('[data-menu-panel]:not(.hidden):not(.is-closing)')) return; // the open list closes first
         e.preventDefault();
@@ -616,27 +578,27 @@ document.addEventListener('keydown', e => {
 });
 
 function openCategoryManagerModal() {
-    editingCategoryName = null;
-    categorySelectMode = false;
-    selectedCategories.clear();
+    categoryManager.editingName = null;
+    categoryManager.selectMode = false;
+    categoryManager.selected.clear();
     renderCategoryManagerItems();
     showModal(document.getElementById('categoryModalBackdrop'));
 }
 
 function closeCategoryManagerModal() {
-    editingCategoryName = null;
-    categorySelectMode = false;
-    selectedCategories.clear();
+    categoryManager.editingName = null;
+    categoryManager.selectMode = false;
+    categoryManager.selected.clear();
     hideModal(document.getElementById('categoryModalBackdrop'));
     renderAll();
 }
 
 function buildCategoryItemRowHtml(cat) {
     const count = Store.habits.filter(h => h.category === cat).length;
-    const isEditing = editingCategoryName === cat;
+    const isEditing = categoryManager.editingName === cat;
 
-    if (categorySelectMode) {
-        const sel = selectedCategories.has(cat);
+    if (categoryManager.selectMode) {
+        const sel = categoryManager.selected.has(cat);
         return `
             <button type="button" data-cat-select="${escapeHtml(cat)}" data-action="toggleCategorySelected" aria-pressed="${sel}" class="w-full text-right p-3 rounded-xl border flex items-center gap-3 transition ${
                 sel
@@ -677,8 +639,8 @@ function buildCategoryItemRowHtml(cat) {
 function renderCategoryManagerItems() {
     const listEl = document.getElementById('modalCategoriesList');
     if (!listEl) return;
-    selectedCategories.forEach(c => {
-        if (!Store.categories.includes(c)) selectedCategories.delete(c);
+    categoryManager.selected.forEach(c => {
+        if (!Store.categories.includes(c)) categoryManager.selected.delete(c);
     });
     updateCategorySelectUi();
     if (Store.categories.length === 0) {
@@ -692,12 +654,11 @@ function renderCategoryManagerItems() {
 }
 
 function switchMainSection(section) {
-    if (section !== 'manage' && manageSelectMode) {
-        manageSelectMode = false;
-        selectedHabitIds.clear();
+    if (section !== 'manage' && manage.selectMode) {
+        manage.selectMode = false;
+        manage.selectedHabitIds.clear();
     }
-    currentMainSection = section;
-    focusOrderCache.key = null;
+    app.currentMainSection = section;
     const sections = ['tracker', 'analytics', 'manage'];
 
     sections.forEach(s => {
@@ -735,7 +696,7 @@ function switchMainSection(section) {
         }
     });
 
-    if (section === 'analytics') analyticsEntryAnim = true;
+    if (section === 'analytics') motion.analyticsEntryAnim = true;
     // restart the icon bounce: remove everywhere, one reflow, add everywhere
     const navIcons = [...document.querySelectorAll(`#navTab_${section} svg, #mobileNav_${section} svg`)];
     navIcons.forEach(svg => svg.classList.remove('nav-bounce'));
@@ -753,8 +714,8 @@ function selectDay(dateKey, jumpToTracker = false) {
         showToast('לא ניתן לבחור תאריך שעוד לא הגיע');
         return;
     }
-    selectedDateKey = dateKey;
-    if (jumpToTracker && currentMainSection !== 'tracker') {
+    tracker.selectedDateKey = dateKey;
+    if (jumpToTracker && app.currentMainSection !== 'tracker') {
         switchMainSection('tracker');
         showToast('עברתם לסימון הרגלים עבור היום שנבחר');
         return;
@@ -763,14 +724,11 @@ function selectDay(dateKey, jumpToTracker = false) {
 }
 
 function setViewMode(mode) {
-    currentViewMode = mode;
+    tracker.viewMode = mode;
     applyViewModeButtonsUI(mode);
     savePrefs();
     renderHabitsList();
 }
-
-let pendingWeekSlide = null; // 'prev' | 'next' for the next render of the day strip
-let pendingCalSlide = null; // 'prev' | 'next' | 'zoom-in' | 'zoom-out' for the calendar grid
 
 // Restart CSS animations on several elements with a single forced reflow
 const RESTARTABLE_ANIMATIONS = ['slide-from-prev', 'slide-from-next', 'zoom-in', 'zoom-out', 'fade-in-quick'];
@@ -788,62 +746,58 @@ function restartAnimationClass(el, cls) {
 }
 
 function shiftWeek(delta) {
-    const nextOffset = weekOffset + delta;
+    const nextOffset = tracker.weekOffset + delta;
     if (nextOffset > 0) return;
-    pendingWeekSlide = delta < 0 ? 'prev' : 'next';
-    weekOffset = nextOffset;
-    weekDays = getWindow7Days(weekOffset);
-    const todayMatch = weekDays.find(d => d.isToday);
-    selectedDateKey = todayMatch ? todayMatch.key : weekDays[0].key;
+    motion.pendingWeekSlide = delta < 0 ? 'prev' : 'next';
+    setWeek(nextOffset);
+    const todayMatch = tracker.weekDays.find(d => d.isToday);
+    tracker.selectedDateKey = todayMatch ? todayMatch.key : tracker.weekDays[0].key;
     renderAll();
 }
 
 function jumpToToday() {
-    if (weekOffset < 0) pendingWeekSlide = 'next';
-    weekOffset = 0;
-    weekDays = getWindow7Days(0);
-    selectedDateKey = getDateKeyDaysAgo(0);
+    if (tracker.weekOffset < 0) motion.pendingWeekSlide = 'next';
+    setWeek(0);
+    tracker.selectedDateKey = getDateKeyDaysAgo(0);
     renderAll();
     showToast('חזרתם לשבוע הנוכחי (היום)');
 }
 
 function openFullCalendarModal() {
-    calendarPicker = null;
+    calendar.picker = null;
     applyCalendarModeChrome();
-    const parts = selectedDateKey.split('-').map(Number);
+    const parts = tracker.selectedDateKey.split('-').map(Number);
     if (parts.length === 3) {
-        calendarViewYear = parts[0];
-        calendarViewMonth = parts[1] - 1;
+        calendar.viewYear = parts[0];
+        calendar.viewMonth = parts[1] - 1;
     } else {
         const now = new Date();
-        calendarViewYear = now.getFullYear();
-        calendarViewMonth = now.getMonth();
+        calendar.viewYear = now.getFullYear();
+        calendar.viewMonth = now.getMonth();
     }
-    calendarViewMode = 'month';
+    calendar.viewMode = 'month';
     renderFullCalendarGrid();
     showModal(document.getElementById('fullCalendarModalBackdrop'));
 }
 
 function closeFullCalendarModal() {
     hideModal(document.getElementById('fullCalendarModalBackdrop'));
-    if (calendarPicker) {
-        calendarPicker = null;
+    if (calendar.picker) {
+        calendar.picker = null;
         // keep the picker header until the closing animation ends, so it doesn't swap mid-fade
         setTimeout(() => {
-            if (!calendarPicker) applyCalendarModeChrome();
+            if (!calendar.picker) applyCalendarModeChrome();
         }, 200);
     }
 }
 
-// ---- Date-picker mode: the same calendar, used to pick a date for a form field ----
-let calendarPicker = null; // { value, min, max, title, onPick, returnFocus }
 const calendarChromeDefaults = {};
 
 function calendarMaxKey() {
-    return calendarPicker ? calendarPicker.max || null : getDateKeyDaysAgo(0);
+    return calendar.picker ? calendar.picker.max || null : getDateKeyDaysAgo(0);
 }
 function calendarMinKey() {
-    return calendarPicker ? calendarPicker.min || null : null;
+    return calendar.picker ? calendar.picker.min || null : null;
 }
 function isCalendarKeyAllowed(key) {
     const max = calendarMaxKey(),
@@ -860,15 +814,15 @@ function applyCalendarModeChrome() {
         calendarChromeDefaults.title = title.innerHTML;
         calendarChromeDefaults.sub = sub.innerHTML;
     }
-    if (calendarPicker && calendarPicker.range) {
-        const a = calendarPicker.anchor;
+    if (calendar.picker && calendar.picker.range) {
+        const a = calendar.picker.anchor;
         title.textContent = a ? 'בחרו תאריך סיום' : 'בחרו תאריך התחלה';
         sub.textContent = a
             ? `מ-${formatDateTriggerLabel(a)} · הקישו על היום האחרון בטווח (יום מוקדם יותר יהפוך להתחלה)`
             : 'הקישו על היום הראשון בטווח, ואחר כך על היום האחרון';
         footer.classList.add('hidden');
-    } else if (calendarPicker) {
-        title.textContent = calendarPicker.title || 'בחירת תאריך';
+    } else if (calendar.picker) {
+        title.textContent = calendar.picker.title || 'בחירת תאריך';
         sub.textContent = 'הקישו על יום כדי לבחור אותו';
         footer.classList.add('hidden');
     } else {
@@ -879,16 +833,16 @@ function applyCalendarModeChrome() {
 }
 
 function openDatePicker(opts) {
-    calendarPicker = { ...opts, returnFocus: document.activeElement };
+    calendar.picker = { ...opts, returnFocus: document.activeElement };
     const base = isValidDateKey(opts.value)
         ? opts.value
         : opts.max && opts.max < getDateKeyDaysAgo(0)
           ? opts.max
           : getDateKeyDaysAgo(0);
     const [y, m] = base.split('-').map(Number);
-    calendarViewYear = y;
-    calendarViewMonth = m - 1;
-    calendarViewMode = 'month';
+    calendar.viewYear = y;
+    calendar.viewMonth = m - 1;
+    calendar.viewMode = 'month';
     applyCalendarModeChrome();
     renderFullCalendarGrid();
     showModal(document.getElementById('fullCalendarModalBackdrop'));
@@ -896,16 +850,16 @@ function openDatePicker(opts) {
 
 // Range mode: first tap sets the start, hovering previews the span, second tap sets the end.
 function openRangePicker(opts) {
-    calendarPicker = { ...opts, range: true, anchor: null, returnFocus: document.activeElement };
+    calendar.picker = { ...opts, range: true, anchor: null, returnFocus: document.activeElement };
     const base = isValidDateKey(opts.focusKey)
         ? opts.focusKey
         : isValidDateKey(opts.end)
           ? opts.end
           : getDateKeyDaysAgo(0);
     const [y, m] = base.split('-').map(Number);
-    calendarViewYear = y;
-    calendarViewMonth = m - 1;
-    calendarViewMode = 'month';
+    calendar.viewYear = y;
+    calendar.viewMonth = m - 1;
+    calendar.viewMode = 'month';
     applyCalendarModeChrome();
     renderFullCalendarGrid();
     showModal(document.getElementById('fullCalendarModalBackdrop'));
@@ -913,7 +867,7 @@ function openRangePicker(opts) {
 
 function paintRangePreview(hoverKey) {
     const grid = document.getElementById('fullCalendarGrid');
-    const p = calendarPicker;
+    const p = calendar.picker;
     if (!grid || !p || !p.range || !p.anchor) return;
     const a = p.anchor;
     const active = hoverKey && hoverKey > a;
@@ -937,9 +891,9 @@ function paintRangePreview(hoverKey) {
 })();
 
 function handleCalendarDayClick(dateKey) {
-    if (calendarPicker && calendarPicker.range) {
+    if (calendar.picker && calendar.picker.range) {
         if (!isCalendarKeyAllowed(dateKey)) return;
-        const p = calendarPicker;
+        const p = calendar.picker;
         if (!p.anchor || dateKey < p.anchor) {
             // first tap — or a day before the current start, which becomes the new start
             p.anchor = dateKey;
@@ -955,9 +909,9 @@ function handleCalendarDayClick(dateKey) {
         pick(start, dateKey);
         return;
     }
-    if (calendarPicker) {
+    if (calendar.picker) {
         if (!isCalendarKeyAllowed(dateKey)) return;
-        const pick = calendarPicker.onPick;
+        const pick = calendar.picker.onPick;
         closeFullCalendarModal();
         pick(dateKey);
         return;
@@ -969,49 +923,49 @@ function isCalendarViewAtCurrentMonth() {
     const max = calendarMaxKey();
     if (!max) return false;
     const [my, mm] = max.split('-').map(Number);
-    return calendarViewYear > my || (calendarViewYear === my && calendarViewMonth >= mm - 1);
+    return calendar.viewYear > my || (calendar.viewYear === my && calendar.viewMonth >= mm - 1);
 }
 
 function shiftCalendarMonth(delta) {
-    pendingCalSlide = delta < 0 ? 'prev' : 'next';
-    if (calendarViewMode === 'year') {
-        if (delta > 0 && calendarMaxKey() && calendarViewYear >= Number(calendarMaxKey().slice(0, 4))) return;
-        calendarViewYear += delta;
+    motion.pendingCalSlide = delta < 0 ? 'prev' : 'next';
+    if (calendar.viewMode === 'year') {
+        if (delta > 0 && calendarMaxKey() && calendar.viewYear >= Number(calendarMaxKey().slice(0, 4))) return;
+        calendar.viewYear += delta;
         renderFullCalendarGrid();
         return;
     }
     if (delta > 0 && isCalendarViewAtCurrentMonth()) return;
-    calendarViewMonth += delta;
-    if (calendarViewMonth > 11) {
-        calendarViewMonth = 0;
-        calendarViewYear++;
-    } else if (calendarViewMonth < 0) {
-        calendarViewMonth = 11;
-        calendarViewYear--;
+    calendar.viewMonth += delta;
+    if (calendar.viewMonth > 11) {
+        calendar.viewMonth = 0;
+        calendar.viewYear++;
+    } else if (calendar.viewMonth < 0) {
+        calendar.viewMonth = 11;
+        calendar.viewYear--;
     }
     renderFullCalendarGrid();
 }
 
 function toggleCalendarYearView() {
-    pendingCalSlide = calendarViewMode === 'month' ? 'zoom-out' : 'zoom-in';
-    if (calendarViewMode === 'month') {
-        calendarViewMode = 'year';
+    motion.pendingCalSlide = calendar.viewMode === 'month' ? 'zoom-out' : 'zoom-in';
+    if (calendar.viewMode === 'month') {
+        calendar.viewMode = 'year';
     } else {
         // Back to month view; clamp to the current month if the shown year is the current one
         const max = calendarMaxKey();
         if (max) {
             const [my, mm] = max.split('-').map(Number);
-            if (calendarViewYear === my && calendarViewMonth > mm - 1) calendarViewMonth = mm - 1;
+            if (calendar.viewYear === my && calendar.viewMonth > mm - 1) calendar.viewMonth = mm - 1;
         }
-        calendarViewMode = 'month';
+        calendar.viewMode = 'month';
     }
     renderFullCalendarGrid();
 }
 
 function openCalendarMonthFromYear(monthIdx) {
-    pendingCalSlide = 'zoom-in';
-    calendarViewMonth = monthIdx;
-    calendarViewMode = 'month';
+    motion.pendingCalSlide = 'zoom-in';
+    calendar.viewMonth = monthIdx;
+    calendar.viewMode = 'month';
     renderFullCalendarGrid();
 }
 
@@ -1027,21 +981,21 @@ function renderCalendarYearView() {
     let html = '';
 
     for (let m = 0; m < 12; m++) {
-        const monthFirstKey = formatDateKey(new Date(calendarViewYear, m, 1));
-        const monthLastKey = formatDateKey(new Date(calendarViewYear, m + 1, 0));
+        const monthFirstKey = formatDateKey(new Date(calendar.viewYear, m, 1));
+        const monthLastKey = formatDateKey(new Date(calendar.viewYear, m + 1, 0));
         const isFutureMonth =
             (calendarMaxKey() && monthFirstKey > calendarMaxKey()) ||
             (calendarMinKey() && monthLastKey < calendarMinKey());
-        const isCurrentMonth = calendarViewYear === now.getFullYear() && m === now.getMonth();
-        const startWeekday = new Date(calendarViewYear, m, 1).getDay();
-        const daysInMonth = new Date(calendarViewYear, m + 1, 0).getDate();
+        const isCurrentMonth = calendar.viewYear === now.getFullYear() && m === now.getMonth();
+        const startWeekday = new Date(calendar.viewYear, m, 1).getDay();
+        const daysInMonth = new Date(calendar.viewYear, m + 1, 0).getDate();
 
         let perfectInMonth = 0;
         let daysHtml = '';
         for (let i = 0; i < startWeekday; i++) daysHtml += '<span></span>';
 
         for (let d = 1; d <= daysInMonth; d++) {
-            const dateObj = new Date(calendarViewYear, m, d);
+            const dateObj = new Date(calendar.viewYear, m, d);
             const dateKey = formatDateKey(dateObj);
             const isFuture = dateKey > todayIso;
             const isToday = dateKey === todayIso;
@@ -1066,7 +1020,7 @@ function renderCalendarYearView() {
         perfectDaysInYear += perfectInMonth;
 
         html += `
-            <button type="button" ${isFutureMonth ? 'disabled' : `data-action="openMonthFromYear" data-arg="${m}"`} data-current-month="${isCurrentMonth ? '1' : ''}" aria-label="${HEBREW_MONTHS_FULL[m]} ${calendarViewYear}" class="flex flex-col justify-start text-right p-2.5 sm:p-3 rounded-xl border transition ${
+            <button type="button" ${isFutureMonth ? 'disabled' : `data-action="openMonthFromYear" data-arg="${m}"`} data-current-month="${isCurrentMonth ? '1' : ''}" aria-label="${HEBREW_MONTHS_FULL[m]} ${calendar.viewYear}" class="flex flex-col justify-start text-right p-2.5 sm:p-3 rounded-xl border transition ${
                 isFutureMonth
                     ? 'bg-slate-50/40 dark:bg-slate-900/30 border-dashed border-slate-200 dark:border-slate-800 opacity-50 cursor-not-allowed'
                     : isCurrentMonth
@@ -1091,17 +1045,17 @@ function renderCalendarYearView() {
     if (currentCard) requestAnimationFrame(() => currentCard.scrollIntoView({ block: 'nearest' }));
     if (summaryEl) {
         summaryEl.textContent =
-            calendarViewYear > now.getFullYear()
+            calendar.viewYear > now.getFullYear()
                 ? 'שנה עתידית'
-                : `${perfectDaysInYear} ימים מושלמים ב-${calendarViewYear}`;
+                : `${perfectDaysInYear} ימים מושלמים ב-${calendar.viewYear}`;
     }
 }
 
 function jumpCalendarToCurrentMonth() {
-    calendarViewMode = 'month';
+    calendar.viewMode = 'month';
     const now = new Date();
-    calendarViewYear = now.getFullYear();
-    calendarViewMonth = now.getMonth();
+    calendar.viewYear = now.getFullYear();
+    calendar.viewMonth = now.getMonth();
     renderFullCalendarGrid();
 }
 
@@ -1114,12 +1068,11 @@ function selectDateFromCalendar(dateKey) {
     const t = todayDayNum();
     const diffDays = target - dowOfDayNum(target) - (t - dowOfDayNum(t));
     const newOffset = Math.min(0, Math.round(diffDays / 7));
-    if (newOffset !== weekOffset) pendingWeekSlide = newOffset < weekOffset ? 'prev' : 'next';
-    weekOffset = newOffset;
-    weekDays = getWindow7Days(weekOffset);
-    selectedDateKey = dateKey;
+    if (newOffset !== tracker.weekOffset) motion.pendingWeekSlide = newOffset < tracker.weekOffset ? 'prev' : 'next';
+    setWeek(newOffset);
+    tracker.selectedDateKey = dateKey;
     closeFullCalendarModal();
-    if (currentMainSection !== 'tracker') {
+    if (app.currentMainSection !== 'tracker') {
         switchMainSection('tracker');
     } else {
         renderAll();
@@ -1127,12 +1080,12 @@ function selectDateFromCalendar(dateKey) {
 }
 
 function renderFullCalendarGrid() {
-    const calSlide = pendingCalSlide;
-    pendingCalSlide = null;
+    const calSlide = motion.pendingCalSlide;
+    motion.pendingCalSlide = null;
     const playCalSlide = () => {
         if (!calSlide) return;
         const target =
-            calendarViewMode === 'year'
+            calendar.viewMode === 'year'
                 ? document.getElementById('fullCalendarYearGrid')
                 : document.getElementById('fullCalendarGrid');
         const cls = { prev: 'slide-from-prev', next: 'slide-from-next', 'zoom-in': 'zoom-in', 'zoom-out': 'zoom-out' }[
@@ -1148,7 +1101,7 @@ function renderFullCalendarGrid() {
     const summaryEl = document.getElementById('calendarMonthlySummaryText');
     if (!titleEl || !gridEl) return;
 
-    const isYear = calendarViewMode === 'year';
+    const isYear = calendar.viewMode === 'year';
     const yearGrid = document.getElementById('fullCalendarYearGrid');
     const weekdayHeader = document.getElementById('calendarWeekdayHeader');
     gridEl.classList.toggle('hidden', isYear);
@@ -1170,19 +1123,19 @@ function renderFullCalendarGrid() {
     if (nextBtn) nextBtn.setAttribute('aria-label', isYear ? 'שנה הבאה' : 'חודש הבא');
 
     if (isYear) {
-        titleEl.textContent = `${calendarViewYear}`;
-        if (nextBtn) nextBtn.disabled = !!calendarMaxKey() && calendarViewYear >= Number(calendarMaxKey().slice(0, 4));
+        titleEl.textContent = `${calendar.viewYear}`;
+        if (nextBtn) nextBtn.disabled = !!calendarMaxKey() && calendar.viewYear >= Number(calendarMaxKey().slice(0, 4));
         renderCalendarYearView();
         playCalSlide();
         return;
     }
 
-    titleEl.textContent = `${HEBREW_MONTHS_FULL[calendarViewMonth]} ${calendarViewYear}`;
+    titleEl.textContent = `${HEBREW_MONTHS_FULL[calendar.viewMonth]} ${calendar.viewYear}`;
     if (nextBtn) nextBtn.disabled = isCalendarViewAtCurrentMonth();
 
-    const firstDay = new Date(calendarViewYear, calendarViewMonth, 1);
+    const firstDay = new Date(calendar.viewYear, calendar.viewMonth, 1);
     const startWeekday = firstDay.getDay();
-    const daysInMonth = new Date(calendarViewYear, calendarViewMonth + 1, 0).getDate();
+    const daysInMonth = new Date(calendar.viewYear, calendar.viewMonth + 1, 0).getDate();
     const todayIso = getDateKeyDaysAgo(0);
 
     let cellsHtml = '';
@@ -1194,15 +1147,15 @@ function renderFullCalendarGrid() {
     let elapsedDaysInMonth = 0;
 
     for (let dayNum = 1; dayNum <= daysInMonth; dayNum++) {
-        const dateObj = new Date(calendarViewYear, calendarViewMonth, dayNum);
+        const dateObj = new Date(calendar.viewYear, calendar.viewMonth, dayNum);
         const dateKey = formatDateKey(dateObj);
         const isToday = dateKey === todayIso;
-        const rp = calendarPicker && calendarPicker.range ? calendarPicker : null;
+        const rp = calendar.picker && calendar.picker.range ? calendar.picker : null;
         const isSelected = rp
             ? rp.anchor
                 ? dateKey === rp.anchor
                 : dateKey === rp.start || dateKey === rp.end
-            : dateKey === (calendarPicker ? calendarPicker.value : selectedDateKey);
+            : dateKey === (calendar.picker ? calendar.picker.value : tracker.selectedDateKey);
         const isInRange = !!rp && !rp.anchor && !!rp.start && !!rp.end && dateKey > rp.start && dateKey < rp.end;
         const isFuture = !isCalendarKeyAllowed(dateKey);
 
@@ -1214,7 +1167,7 @@ function renderFullCalendarGrid() {
         }
 
         cellsHtml += `
-            <button type="button" data-cal-key="${dateKey}" ${isFuture ? 'disabled' : `data-action="calendarDay"`} aria-pressed="${isSelected ? 'true' : 'false'}" ${isToday ? 'aria-current="date"' : ''} aria-label="${HEBREW_DAYS_FULL[dateObj.getDay()]}, ${dayNum} ב${HEBREW_MONTHS_FULL[calendarViewMonth]}${isFuture ? ', לא זמין' : isRestDay ? ', אין יעדים' : `, ${stats.doneScheduled} מתוך ${stats.totalScheduled} הושלמו`}" class="h-14 sm:h-20 p-1.5 sm:p-2 rounded-xl border flex flex-col justify-between text-right transition relative ${isInRange && !isFuture ? 'cal-in-range' : ''} ${
+            <button type="button" data-cal-key="${dateKey}" ${isFuture ? 'disabled' : `data-action="calendarDay"`} aria-pressed="${isSelected ? 'true' : 'false'}" ${isToday ? 'aria-current="date"' : ''} aria-label="${HEBREW_DAYS_FULL[dateObj.getDay()]}, ${dayNum} ב${HEBREW_MONTHS_FULL[calendar.viewMonth]}${isFuture ? ', לא זמין' : isRestDay ? ', אין יעדים' : `, ${stats.doneScheduled} מתוך ${stats.totalScheduled} הושלמו`}" class="h-14 sm:h-20 p-1.5 sm:p-2 rounded-xl border flex flex-col justify-between text-right transition relative ${isInRange && !isFuture ? 'cal-in-range' : ''} ${
                 isFuture
                     ? 'bg-slate-50/40 dark:bg-slate-900/30 text-slate-400 dark:text-slate-600 border-dashed border-slate-200 dark:border-slate-800 opacity-45 cursor-not-allowed select-none'
                     : isSelected
@@ -1251,11 +1204,11 @@ function renderFullCalendarGrid() {
 }
 
 function setCategoryFilter(category, context = null) {
-    const targetContext = context || (currentMainSection === 'manage' ? 'manage' : 'tracker');
+    const targetContext = context || (app.currentMainSection === 'manage' ? 'manage' : 'tracker');
     if (targetContext === 'manage') {
-        manageSelectedCategory = category;
+        manage.selectedCategory = category;
     } else {
-        trackerSelectedCategory = category;
+        tracker.selectedCategory = category;
     }
     // only the list the filter belongs to changes
     if (targetContext === 'manage') {
@@ -1271,29 +1224,29 @@ function setCategoryFilter(category, context = null) {
 function renderHeaderDateStrip() {
     renderGreeting();
 
-    const first = weekDays[0];
-    const last = weekDays[6];
+    const first = tracker.weekDays[0];
+    const last = tracker.weekDays[6];
     const formattedRange = formatWeekRangeText(first, last);
 
     const nextWeekBtn = document.getElementById('nextWeekBtn');
-    if (nextWeekBtn) nextWeekBtn.disabled = weekOffset >= 0;
+    if (nextWeekBtn) nextWeekBtn.disabled = tracker.weekOffset >= 0;
     const rangeLabel = document.getElementById('weekRangeLabel');
-    if (rangeLabel) rangeLabel.textContent = weekOffset === 0 ? `השבוע · ${formattedRange}` : formattedRange;
+    if (rangeLabel) rangeLabel.textContent = tracker.weekOffset === 0 ? `השבוע · ${formattedRange}` : formattedRange;
 
     const strip = document.getElementById('daySelectorStrip');
     if (!strip) return;
-    const weekSlide = pendingWeekSlide;
-    pendingWeekSlide = null;
+    const weekSlide = motion.pendingWeekSlide;
+    motion.pendingWeekSlide = null;
 
     patchHTML(
         strip,
-        weekDays
+        tracker.weekDays
             .map(day => {
-                const isSelected = day.key === selectedDateKey;
+                const isSelected = day.key === tracker.selectedDateKey;
                 const { totalScheduled, pct, allDone } = getDayStats(day);
                 const ringPct = day.isFuture || totalScheduled === 0 ? 0 : pct;
                 const ringLen = 37.7; // 2 * PI * 6
-                const prevPct = renderingEntry ? undefined : prevRingPct[day.key];
+                const prevPct = motion.renderingEntry ? undefined : prevRingPct[day.key];
                 prevRingPct[day.key] = ringPct;
                 const ringAnim =
                     prevPct !== undefined && prevPct !== ringPct
@@ -1315,7 +1268,7 @@ function renderHeaderDateStrip() {
                 </svg>`;
 
                 return `
-            <button type="button" ${day.isFuture ? 'disabled' : `data-action="selectDay" data-key="${day.key}"`} data-tip="${day.isFuture ? 'תאריך עתידי — לא ניתן לבחור' : `${day.dayFull} · ${totalScheduled > 0 ? `${pct}%` : 'אין יעדים מתוכננים'}`}" aria-pressed="${isSelected ? 'true' : 'false'}" ${day.isToday ? 'aria-current="date"' : ''} aria-label="${day.isToday ? 'היום, ' : ''}${day.dayFull}, ${day.dayNum} ב${HEBREW_MONTHS_FULL[day.dateObj.getMonth()]}${day.isFuture ? ', תאריך עתידי' : totalScheduled > 0 ? `, ${pct}% הושלמו` : ', אין יעדים'}" class="${day.key === celebrateDayKey ? 'day-celebrate' : ''} relative flex flex-col items-center justify-center gap-1 sm:gap-1.5 py-2 sm:py-2.5 rounded-xl transition-colors text-center ${
+            <button type="button" ${day.isFuture ? 'disabled' : `data-action="selectDay" data-key="${day.key}"`} data-tip="${day.isFuture ? 'תאריך עתידי — לא ניתן לבחור' : `${day.dayFull} · ${totalScheduled > 0 ? `${pct}%` : 'אין יעדים מתוכננים'}`}" aria-pressed="${isSelected ? 'true' : 'false'}" ${day.isToday ? 'aria-current="date"' : ''} aria-label="${day.isToday ? 'היום, ' : ''}${day.dayFull}, ${day.dayNum} ב${HEBREW_MONTHS_FULL[day.dateObj.getMonth()]}${day.isFuture ? ', תאריך עתידי' : totalScheduled > 0 ? `, ${pct}% הושלמו` : ', אין יעדים'}" class="${day.key === motion.celebrateDayKey ? 'day-celebrate' : ''} relative flex flex-col items-center justify-center gap-1 sm:gap-1.5 py-2 sm:py-2.5 rounded-xl transition-colors text-center ${
                 isSelected
                     ? 'bg-indigo-600 text-white'
                     : day.isFuture
@@ -1345,8 +1298,8 @@ function renderHeaderDateStrip() {
 
 function renderTrackerSummary() {
     const totalHabits = getLiveHabits().length;
-    const selectedDayObj = weekDays.find(d => d.key === selectedDateKey) || weekDays[0];
-    const isSelectedFuture = isFutureDateKey(selectedDateKey);
+    const selectedDayObj = tracker.weekDays.find(d => d.key === tracker.selectedDateKey) || tracker.weekDays[0];
+    const isSelectedFuture = isFutureDateKey(tracker.selectedDateKey);
 
     const dayStats = getDayStats(selectedDayObj);
     const selectedDone = dayStats.doneScheduled;
@@ -1362,7 +1315,7 @@ function renderTrackerSummary() {
         } else if (selectedTarget === 0) {
             progressEl.textContent = selectedBonus > 0 ? `${selectedBonus} בונוס` : 'אין יעדים ליום זה';
         } else {
-            progressEl.innerHTML = `<span class="${selectedPct >= 100 ? 'text-emerald-700 dark:text-emerald-400' : ''} ${celebrateDayKey === selectedDateKey ? 'text-pop' : ''}">${selectedDone}/${selectedTarget} הושלמו</span>${selectedBonus > 0 ? ` · <bdi dir="ltr">+${selectedBonus}</bdi> בונוס` : ''}`;
+            progressEl.innerHTML = `<span class="${selectedPct >= 100 ? 'text-emerald-700 dark:text-emerald-400' : ''} ${motion.celebrateDayKey === tracker.selectedDateKey ? 'text-pop' : ''}">${selectedDone}/${selectedTarget} הושלמו</span>${selectedBonus > 0 ? ` · <bdi dir="ltr">+${selectedBonus}</bdi> בונוס` : ''}`;
         }
     }
 
@@ -1381,12 +1334,13 @@ function renderTrackerSummary() {
     // Separate "Mark All" & secondary "Clear Checks" buttons
     const visibleHabits = getTrackerVisibleHabits();
     const scheduledForSelected = visibleHabits.filter(h =>
-        isHabitScheduledOnKey(h, selectedDateKey, selectedDayObj.dateObj.getDay())
+        isHabitScheduledOnKey(h, tracker.selectedDateKey, selectedDayObj.dateObj.getDay())
     );
-    const anyCheckedOnDay = visibleHabits.some(h => hasAnyMarkOnDay(h, selectedDateKey));
-    const filterSuffix = trackerSelectedCategory !== 'הכל' ? ` (${trackerSelectedCategory})` : '';
+    const anyCheckedOnDay = visibleHabits.some(h => hasAnyMarkOnDay(h, tracker.selectedDateKey));
+    const filterSuffix = tracker.selectedCategory !== 'הכל' ? ` (${tracker.selectedCategory})` : '';
     const allScheduledChecked =
-        scheduledForSelected.length > 0 && scheduledForSelected.every(h => h.history && h.history[selectedDateKey]);
+        scheduledForSelected.length > 0 &&
+        scheduledForSelected.every(h => h.history && h.history[tracker.selectedDateKey]);
 
     const markAllBtn = document.getElementById('markAllBtn');
     const clearAllBtn = document.getElementById('clearAllBtn');
@@ -1411,39 +1365,16 @@ function renderTrackerSummary() {
     }
 }
 
-let analyticsRangeState = { preset: 'week', start: null, end: null };
-
-function restoreAnalyticsRange(saved) {
-    if (!saved || !ANALYTICS_PRESETS.some(p => p.id === saved.preset)) return;
-    if (saved.preset === 'custom') {
-        if (isValidDateKey(saved.start) && isValidDateKey(saved.end) && saved.start <= saved.end) {
-            analyticsRangeState = { preset: 'custom', start: saved.start, end: saved.end };
-        }
-        return;
-    }
-    // Presets always restart from "now" so the view stays current
-    analyticsRangeState = { preset: saved.preset, ...getPresetRange(saved.preset) };
-}
-
-function ensureAnalyticsRange() {
-    if (!analyticsRangeState.start || !analyticsRangeState.end) {
-        analyticsRangeState = {
-            preset: analyticsRangeState.preset === 'custom' ? 'week' : analyticsRangeState.preset,
-            ...getPresetRange(analyticsRangeState.preset === 'custom' ? 'week' : analyticsRangeState.preset)
-        };
-    }
-}
-
 function setAnalyticsPreset(preset) {
-    analyticsEntryAnim = true;
+    motion.analyticsEntryAnim = true;
     if (preset === 'custom') {
         ensureAnalyticsRange();
         const todayKey = getDateKeyDaysAgo(0);
-        const end = analyticsRangeState.end > todayKey ? todayKey : analyticsRangeState.end;
-        const start = analyticsRangeState.start > end ? end : analyticsRangeState.start;
-        analyticsRangeState = { preset: 'custom', start, end };
+        const end = analytics.range.end > todayKey ? todayKey : analytics.range.end;
+        const start = analytics.range.start > end ? end : analytics.range.start;
+        analytics.range = { preset: 'custom', start, end };
     } else {
-        analyticsRangeState = { preset, ...getPresetRange(preset) };
+        analytics.range = { preset, ...getPresetRange(preset) };
     }
     savePrefs();
     renderAnalytics();
@@ -1451,7 +1382,7 @@ function setAnalyticsPreset(preset) {
 }
 
 function applyCustomAnalyticsRange() {
-    analyticsEntryAnim = true;
+    motion.analyticsEntryAnim = true;
     const startEl = document.getElementById('analyticsRangeStart');
     const endEl = document.getElementById('analyticsRangeEnd');
     let start = startEl.value;
@@ -1462,7 +1393,7 @@ function applyCustomAnalyticsRange() {
         start = addDaysToKey(end, -(MAX_RANGE_DAYS - 1));
         showToast('הטווח המקסימלי הוא שנה');
     }
-    analyticsRangeState = { preset: 'custom', start, end };
+    analytics.range = { preset: 'custom', start, end };
     savePrefs();
     renderAnalytics();
     renderLeaderboard();
@@ -1485,9 +1416,9 @@ function openAnalyticsRangePicker(fromInput) {
 }
 
 function shiftAnalyticsRange(dir) {
-    analyticsEntryAnim = true;
+    motion.analyticsEntryAnim = true;
     ensureAnalyticsRange();
-    const { preset, start, end } = analyticsRangeState;
+    const { preset, start, end } = analytics.range;
     let ns, ne;
     if (preset === 'month') {
         const s0 = parseDateKeyLocal(start);
@@ -1501,7 +1432,7 @@ function shiftAnalyticsRange(dir) {
         ne = addDaysToKey(end, dir * len);
     }
     if (dir > 0 && ns > getDateKeyDaysAgo(0)) return;
-    analyticsRangeState = { preset, start: ns, end: ne };
+    analytics.range = { preset, start: ns, end: ne };
     savePrefs();
     renderAnalytics();
     renderLeaderboard();
@@ -1509,7 +1440,7 @@ function shiftAnalyticsRange(dir) {
 
 function getAnalyticsDays() {
     ensureAnalyticsRange();
-    return buildDaysForRange(analyticsRangeState.start, analyticsRangeState.end);
+    return buildDaysForRange(analytics.range.start, analytics.range.end);
 }
 
 // ===== Targeted DOM updates =====
@@ -1585,7 +1516,7 @@ function renderAnalyticsRangeControls() {
     const presetsEl = document.getElementById('analyticsRangePresets');
     if (!presetsEl) return;
     presetsEl.innerHTML = ANALYTICS_PRESETS.map(p => {
-        const active = p.id === analyticsRangeState.preset;
+        const active = p.id === analytics.range.preset;
         return `<button type="button" aria-pressed="${active}" data-action="setPreset" data-arg="${p.id}" class="tap-44 h-9 px-2.5 sm:px-3 rounded-lg transition-all ${
             active
                 ? 'text-slate-900 dark:text-white'
@@ -1593,51 +1524,48 @@ function renderAnalyticsRangeControls() {
         }">${p.label}</button>`;
     }).join('');
     updateSegPill(presetsEl);
-    document.getElementById('analyticsRangeLabel').textContent = formatRangeLabel(analyticsRangeState);
+    document.getElementById('analyticsRangeLabel').textContent = formatRangeLabel(analytics.range);
     const nextStart =
-        analyticsRangeState.preset === 'month'
+        analytics.range.preset === 'month'
             ? formatDateKey(
                   new Date(
-                      parseDateKeyLocal(analyticsRangeState.start).getFullYear(),
-                      parseDateKeyLocal(analyticsRangeState.start).getMonth() + 1,
+                      parseDateKeyLocal(analytics.range.start).getFullYear(),
+                      parseDateKeyLocal(analytics.range.start).getMonth() + 1,
                       1
                   )
               )
-            : addDaysToKey(analyticsRangeState.end, 1);
+            : addDaysToKey(analytics.range.end, 1);
     document.getElementById('analyticsNextRangeBtn').disabled = nextStart > getDateKeyDaysAgo(0);
     const custom = document.getElementById('analyticsCustomRange');
-    const isCustom = analyticsRangeState.preset === 'custom';
+    const isCustom = analytics.range.preset === 'custom';
     custom.classList.toggle('hidden', !isCustom);
     if (isCustom) {
         const startEl = document.getElementById('analyticsRangeStart');
         const endEl = document.getElementById('analyticsRangeEnd');
-        if (document.activeElement !== startEl) startEl.value = analyticsRangeState.start;
-        if (document.activeElement !== endEl) endEl.value = analyticsRangeState.end;
+        if (document.activeElement !== startEl) startEl.value = analytics.range.start;
+        if (document.activeElement !== endEl) endEl.value = analytics.range.end;
         startEl.max = getDateKeyDaysAgo(0);
         endEl.max = getDateKeyDaysAgo(0);
     }
     scheduleScrollFades();
 }
 
-// ===== Analytics: filter (all / category / single habit) =====
-let analyticsFilter = 'all'; // 'all' | 'cat:<name>' | 'habit:<id>'
-
 function getAnalyticsFilterInfo() {
-    if (analyticsFilter.startsWith('habit:')) {
-        const habit = Store.habits.find(h => h.id === analyticsFilter.slice(6));
+    if (analytics.filter.startsWith('habit:')) {
+        const habit = Store.habits.find(h => h.id === analytics.filter.slice(6));
         if (habit) return { type: 'habit', habit, list: [habit] };
-    } else if (analyticsFilter.startsWith('cat:')) {
-        const cat = analyticsFilter.slice(4);
+    } else if (analytics.filter.startsWith('cat:')) {
+        const cat = analytics.filter.slice(4);
         const list = Store.habits.filter(h => getHabitCategoryDisplay(h) === cat);
         if (list.length) return { type: 'category', cat, list };
     }
-    analyticsFilter = 'all';
+    analytics.filter = 'all';
     return { type: 'all', list: Store.habits };
 }
 
 function setAnalyticsFilter(value) {
-    analyticsEntryAnim = true;
-    analyticsFilter = value || 'all';
+    motion.analyticsEntryAnim = true;
+    analytics.filter = value || 'all';
     savePrefs();
     renderAnalytics();
     renderLeaderboard();
@@ -1660,12 +1588,9 @@ function renderAnalyticsFilterSelect() {
             ? `<optgroup label="קטגוריה">${ordered.map(c => opt('cat:' + c, c)).join('')}</optgroup>`
             : '') +
         `<optgroup label="הרגל">${live.map(h => opt('habit:' + h.id, `${h.icon} ${h.name}`)).join('')}${archived.map(h => opt('habit:' + h.id, `${h.icon} ${h.name} (בארכיון)`)).join('')}</optgroup>`;
-    sel.value = analyticsFilter;
+    sel.value = analytics.filter;
 }
 
-// Charts animate in two ways: grow from zero when you arrive or change the range/filter,
-// and glide from the previous value when one number changes. Nothing replays otherwise.
-let analyticsEntryAnim = false;
 const prevBarHeights = {};
 const prevLeaderboardPct = {};
 const KPI_IDS = ['weeklyRateValue', 'perfectDaysTileValue', 'bestStreakValue', 'attentionHabitBox'];
@@ -1742,7 +1667,7 @@ function renderAnalytics() {
     document.getElementById('weeklyTotalChecks').textContent = `${cur.done} מתוך ${cur.target} יעדים`;
 
     // Compare with the previous range of the same kind
-    const prevBounds = getPreviousRangeBounds(analyticsRangeState);
+    const prevBounds = getPreviousRangeBounds(analytics.range);
     const prevDays = buildDaysForRange(prevBounds.start, prevBounds.end);
     const prev = rangeRate(
         prevDays,
@@ -1752,9 +1677,9 @@ function renderAnalytics() {
     if (cur.rate !== null && prev.rate !== null) {
         const diff = cur.rate - prev.rate;
         const prevWord =
-            analyticsRangeState.preset === 'week'
+            analytics.range.preset === 'week'
                 ? 'שבוע קודם'
-                : analyticsRangeState.preset === 'month'
+                : analytics.range.preset === 'month'
                   ? 'חודש קודם'
                   : 'הטווח הקודם';
         compareEl.className = `text-xs font-semibold mt-1 ${diff > 0 ? 'text-emerald-700 dark:text-emerald-400' : diff < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`;
@@ -1904,7 +1829,7 @@ function renderAnalytics() {
         renderLineChart(days, avgPct, scope);
     }
     renderChartLegend(longRange ? (single ? 'grid' : 'line') : single ? 'habitBars' : 'bars');
-    if (!renderingEntry) {
+    if (!motion.renderingEntry) {
         restartAnimationClasses(
             KPI_IDS.map((id, i) => [document.getElementById(id), i])
                 .filter(([el, i]) => el.textContent !== kpiBefore[i] && kpiBefore[i] !== '')
@@ -1979,14 +1904,14 @@ function renderHabitGrid(habit, days) {
         })
         .join('');
     wrap.innerHTML = `
-        <div class="flex items-start justify-center py-2 ${analyticsEntryAnim ? 'fade-in-quick' : ''}" style="gap:${gap}px">
+        <div class="flex items-start justify-center py-2 ${motion.analyticsEntryAnim ? 'fade-in-quick' : ''}" style="gap:${gap}px">
             <div class="flex flex-col pl-1" style="gap:${gap}px"><span class="h-4"></span>${dayLabels}</div>
             ${cols}
         </div>`;
 }
 
 function barFrom(key, height) {
-    return analyticsEntryAnim ? 0 : prevBarHeights[key];
+    return motion.analyticsEntryAnim ? 0 : prevBarHeights[key];
 }
 function barGrowClass(key, height) {
     const from = barFrom(key, height);
@@ -1996,7 +1921,7 @@ function barGrowStyle(key, height, idx) {
     const from = barFrom(key, height);
     prevBarHeights[key] = height;
     if (from === undefined || from === height) return '';
-    return `--bar-from:${from}%; animation-delay:${analyticsEntryAnim ? Math.min(idx, 14) * 25 : 0}ms;`;
+    return `--bar-from:${from}%; animation-delay:${motion.analyticsEntryAnim ? Math.min(idx, 14) * 25 : 0}ms;`;
 }
 
 function renderBarChart(dayStats, avgPct, single = null) {
@@ -2011,7 +1936,7 @@ function renderBarChart(dayStats, avgPct, single = null) {
 
     chart.innerHTML = dayStats
         .map(({ day, totalScheduled, doneScheduled, pct }, barIdx) => {
-            const isSelected = day.key === selectedDateKey;
+            const isSelected = day.key === tracker.selectedDateKey;
             if (single) {
                 // One habit: a day is either done or not
                 const done = !!(single.history && single.history[day.key]);
@@ -2196,15 +2121,15 @@ function renderLineChart(days, avgPct, scope = Store.habits) {
     wrap.innerHTML = `
         <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" direction="ltr" style="direction:ltr" class="block text-indigo-500" role="img" aria-label="גרף עקביות יומית לאורך ${n} ימים, ממוצע ${avgPct}%">
             ${grid}
-            <path d="${areaPaths}" class="fill-indigo-500/10 dark:fill-indigo-400/10 ${analyticsEntryAnim ? 'fade-in-quick' : ''}"/>
-            <path d="${dailyLine}" fill="none" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5" stroke-linejoin="round" class="${analyticsEntryAnim ? 'fade-in-quick' : ''}"/>
+            <path d="${areaPaths}" class="fill-indigo-500/10 dark:fill-indigo-400/10 ${motion.analyticsEntryAnim ? 'fade-in-quick' : ''}"/>
+            <path d="${dailyLine}" fill="none" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.5" stroke-linejoin="round" class="${motion.analyticsEntryAnim ? 'fade-in-quick' : ''}"/>
             <line x1="${pad.left}" x2="${pad.left + plotW}" y1="${avgY}" y2="${avgY}" stroke="currentColor" class="text-slate-500 dark:text-slate-400" stroke-width="1.5" stroke-dasharray="5 4"/>
             ${maLine
                 .split('M')
                 .filter(Boolean)
                 .map(
                     seg =>
-                        `<path d="M${seg}" pathLength="1" class="${analyticsEntryAnim ? 'line-draw' : ''}" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`
+                        `<path d="M${seg}" pathLength="1" class="${motion.analyticsEntryAnim ? 'line-draw' : ''}" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`
                 )
                 .join('')}
             ${perfectDots}
@@ -2256,7 +2181,7 @@ window.addEventListener('resize', () => {
     clearTimeout(lineChartResizeTimer);
     lineChartResizeTimer = setTimeout(() => {
         if (
-            currentMainSection === 'analytics' &&
+            app.currentMainSection === 'analytics' &&
             (!document.getElementById('lineChartWrap').classList.contains('hidden') ||
                 !document.getElementById('habitGridWrap').classList.contains('hidden'))
         )
@@ -2268,13 +2193,13 @@ function widenFrom(id, pct, idx) {
     // memoised per render so the two calls above agree
     const key = `${id}|${pct}`;
     if (widenFrom.cache[key]) return widenFrom.cache[key];
-    const from = analyticsEntryAnim ? 0 : prevLeaderboardPct[id];
+    const from = motion.analyticsEntryAnim ? 0 : prevLeaderboardPct[id];
     const out =
         from === undefined || from === pct
             ? { cls: '', style: '' }
             : {
                   cls: 'bar-widen',
-                  style: `--w-from:${from}%; animation-delay:${analyticsEntryAnim ? Math.min(idx, 8) * 40 : 0}ms;`
+                  style: `--w-from:${from}%; animation-delay:${motion.analyticsEntryAnim ? Math.min(idx, 8) * 40 : 0}ms;`
               };
     widenFrom.cache[key] = out;
     return out;
@@ -2287,8 +2212,7 @@ function renderLeaderboard() {
     if (!container) return;
 
     const days = getAnalyticsDays();
-    const isCurrentWeek =
-        analyticsRangeState.preset === 'week' && formatRangeLabel(analyticsRangeState) === 'השבוע הנוכחי';
+    const isCurrentWeek = analytics.range.preset === 'week' && formatRangeLabel(analytics.range) === 'השבוע הנוכחי';
     const periodWord = isCurrentWeek ? 'השבוע' : 'בטווח';
     const progressOf = h => {
         const { target, done } = getHabitRangeProgress(h, days, false);
@@ -2300,7 +2224,7 @@ function renderLeaderboard() {
             container,
             `<p class="text-xs text-slate-500 dark:text-slate-400 text-center py-6">${Store.habits.length === 0 ? 'אין הרגלים להצגה בדירוג.' : 'אין הרגלים פעילים בטווח הזה.'}</p>`
         );
-        analyticsEntryAnim = false;
+        motion.analyticsEntryAnim = false;
         return;
     }
 
@@ -2349,7 +2273,7 @@ function renderLeaderboard() {
     sorted.forEach(h => {
         prevLeaderboardPct[h.id] = progressById.get(h.id).pct;
     });
-    analyticsEntryAnim = false;
+    motion.analyticsEntryAnim = false;
 }
 
 function renderCategoryFilterBar(context = 'tracker') {
@@ -2359,11 +2283,11 @@ function renderCategoryFilterBar(context = 'tracker') {
         allFilterCategories.push(UNCATEGORIZED_LABEL);
     }
 
-    if (!allFilterCategories.includes(trackerSelectedCategory)) {
-        trackerSelectedCategory = 'הכל';
+    if (!allFilterCategories.includes(tracker.selectedCategory)) {
+        tracker.selectedCategory = 'הכל';
     }
-    if (!allFilterCategories.includes(manageSelectedCategory)) {
-        manageSelectedCategory = 'הכל';
+    if (!allFilterCategories.includes(manage.selectedCategory)) {
+        manage.selectedCategory = 'הכל';
     }
 
     const live = getLiveHabits();
@@ -2399,20 +2323,20 @@ function renderCategoryFilterBar(context = 'tracker') {
 
     if (context === 'manage') {
         const manageBar = document.getElementById('manageCategoryFilterBar');
-        if (manageBar) patchHTML(manageBar, buildPills(manageSelectedCategory, 'manage'));
+        if (manageBar) patchHTML(manageBar, buildPills(manage.selectedCategory, 'manage'));
         scheduleScrollFades();
         return;
     }
     const bar = document.getElementById('categoryFilterBar');
-    if (bar) patchHTML(bar, buildPills(trackerSelectedCategory, 'tracker'));
+    if (bar) patchHTML(bar, buildPills(tracker.selectedCategory, 'tracker'));
     scheduleScrollFades();
 
     const indicator = document.getElementById('trackerActiveFilterIndicator');
     if (indicator) {
-        if (trackerSelectedCategory !== 'הכל') {
+        if (tracker.selectedCategory !== 'הכל') {
             indicator.classList.remove('hidden');
             indicator.innerHTML = `
-                <span>מוצגים רק הרגלי <strong>${escapeHtml(trackerSelectedCategory)}</strong></span>
+                <span>מוצגים רק הרגלי <strong>${escapeHtml(tracker.selectedCategory)}</strong></span>
                 <span>·</span>
                 <button type="button" data-action="setCategoryFilter" data-cat="הכל" data-ctx="tracker" class="font-bold text-indigo-600 dark:text-indigo-400 hover:underline">הצג הכל</button>
             `;
@@ -2447,12 +2371,12 @@ function setRevealOpen(revealEl, toggleBtn, open, openText, closedText) {
 }
 
 function toggleUnscheduledGroup() {
-    unscheduledSectionExpanded = !unscheduledSectionExpanded;
+    tracker.restGroupExpanded = !tracker.restGroupExpanded;
     if (
         !setRevealOpen(
             document.getElementById('restGroupReveal'),
             document.getElementById('restGroupToggle'),
-            unscheduledSectionExpanded,
+            tracker.restGroupExpanded,
             'הסתר',
             'הצג הכל'
         )
@@ -2650,25 +2574,27 @@ function buildHabitFocusCardHtml(habit, selectedDayObj, isSelectedDayFuture, tim
     const isDoneSelectedDay =
         !isSelectedDayFuture &&
         (isSlot
-            ? isSlotDone(habit, selectedDateKey, habit._slot)
-            : !!(habit.history && habit.history[selectedDateKey]));
+            ? isSlotDone(habit, tracker.selectedDateKey, habit._slot)
+            : !!(habit.history && habit.history[tracker.selectedDateKey]));
     const slotAttr = isSlot ? ` data-slot="${habit._slot}"` : '';
     const isScheduledToday = isHabitScheduledForDayOfWeek(habit, selectedDayOfWeek);
     const streak = calculateStreak(habit);
     const streakLongText = getHabitStreakLongText(habit);
-    const weeklyCount = getWeeklyCountForHabit(habit, weekDays);
-    const weeklyGoal = getWeeklyGoalForHabit(habit, weekDays);
+    const weeklyCount = getWeeklyCountForHabit(habit, tracker.weekDays);
+    const weeklyGoal = getWeeklyGoalForHabit(habit, tracker.weekDays);
     const weeklyPct = weeklyGoal > 0 ? Math.min(100, Math.round((weeklyCount / weeklyGoal) * 100)) : 0;
     const isWeeklyQuotaMet = isFlexible && weeklyGoal > 0 && weeklyCount >= weeklyGoal;
     const goalLabel = getHabitGoalLabel(habit);
     const justToggled =
-        lastToggle && lastToggle.id === habit.id && (!isSlot || lastToggle.slot === habit._slot) ? lastToggle : null;
+        motion.lastToggle && motion.lastToggle.id === habit.id && (!isSlot || motion.lastToggle.slot === habit._slot)
+            ? motion.lastToggle
+            : null;
 
-    const miniPips = weekDays
+    const miniPips = tracker.weekDays
         .map(d => {
             const isDayFuture = d.isFuture || isFutureDateKey(d.key);
             const checked = !isDayFuture && !!(habit.history && habit.history[d.key]);
-            const isCurrent = d.key === selectedDateKey;
+            const isCurrent = d.key === tracker.selectedDateKey;
             const isDayScheduled = isHabitScheduledOnKey(habit, d.key, d.dateObj.getDay());
             const isDayFlexible = isFlexibleOnKey(habit, d.key);
             const isBeforeStart = !isHabitActiveOnKey(habit, d.key);
@@ -2690,16 +2616,16 @@ function buildHabitFocusCardHtml(habit, selectedDayObj, isSelectedDayFuture, tim
         .join('');
 
     return `
-        <div data-flip-key="t-${escapeHtml(habit.id)}${isSlot ? `-${habit._slot}` : ''}" ${isSelectedDayFuture ? '' : `data-action="toggleCardBody" data-id="${escapeHtml(habit.id)}" data-key="${selectedDateKey}"${slotAttr}`} class="${flashClassFor(habit.id)} ${isSelectedDayFuture ? 'cursor-not-allowed' : 'cursor-pointer'} select-none bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border ${timeStatus === 'now' ? 'border-indigo-500 dark:border-indigo-400 ring-1 ring-indigo-500/40' : 'border-slate-200/70 dark:border-slate-800'} transition-all duration-300 flex flex-col justify-between ${
+        <div data-flip-key="t-${escapeHtml(habit.id)}${isSlot ? `-${habit._slot}` : ''}" ${isSelectedDayFuture ? '' : `data-action="toggleCardBody" data-id="${escapeHtml(habit.id)}" data-key="${tracker.selectedDateKey}"${slotAttr}`} class="${flashClassFor(habit.id)} ${isSelectedDayFuture ? 'cursor-not-allowed' : 'cursor-pointer'} select-none bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border ${timeStatus === 'now' ? 'border-indigo-500 dark:border-indigo-400 ring-1 ring-indigo-500/40' : 'border-slate-200/70 dark:border-slate-800'} transition-all duration-300 flex flex-col justify-between ${
             !isScheduledToday && !isFlexible ? 'opacity-85' : 'hover:border-slate-300 dark:hover:border-slate-700'
         }">
             <div class="flex items-start gap-3.5">
                 <!-- Large Touch Checkbox Button -->
-                <button type="button" ${isSelectedDayFuture ? 'disabled' : `data-action="toggleDay" data-id="${escapeHtml(habit.id)}" data-key="${selectedDateKey}"${slotAttr}`} title="${isSelectedDayFuture ? 'לא ניתן לסמן הרגלים בתאריך עתידי' : ''}" aria-label="סמן את ${escapeHtml(habit.name)}${isSlot ? `, פעם ${habit._slot + 1} מתוך ${habit._slots}` : ''}" aria-pressed="${isDoneSelectedDay ? 'true' : 'false'}" class="w-12 h-12 shrink-0 rounded-xl flex items-center justify-center text-xl transition-all ${
+                <button type="button" ${isSelectedDayFuture ? 'disabled' : `data-action="toggleDay" data-id="${escapeHtml(habit.id)}" data-key="${tracker.selectedDateKey}"${slotAttr}`} title="${isSelectedDayFuture ? 'לא ניתן לסמן הרגלים בתאריך עתידי' : ''}" aria-label="סמן את ${escapeHtml(habit.name)}${isSlot ? `, פעם ${habit._slot + 1} מתוך ${habit._slots}` : ''}" aria-pressed="${isDoneSelectedDay ? 'true' : 'false'}" class="w-12 h-12 shrink-0 rounded-xl flex items-center justify-center text-xl transition-all ${
                     isSelectedDayFuture
                         ? 'bg-slate-100 dark:bg-slate-800/70 text-slate-400 border border-dashed border-slate-300 dark:border-slate-700 cursor-not-allowed pointer-events-none opacity-60'
                         : isDoneSelectedDay
-                          ? `${colorMeta.bg} text-white ${habit.id === lastToggledHabitId && (!isSlot || justToggled) ? 'animate-pop' : ''}`
+                          ? `${colorMeta.bg} text-white ${habit.id === motion.lastToggledHabitId && (!isSlot || justToggled) ? 'animate-pop' : ''}`
                           : `${colorMeta.softBg} ${colorMeta.text} border border-slate-200 dark:border-slate-700`
                 }">
                     ${
@@ -2746,13 +2672,15 @@ function renderHabitsList() {
     const container = document.getElementById('habitsListContainer');
 
     const categoryFiltered =
-        trackerSelectedCategory === 'הכל'
+        tracker.selectedCategory === 'הכל'
             ? Store.habits
-            : Store.habits.filter(h => getHabitCategoryDisplay(h) === trackerSelectedCategory);
+            : Store.habits.filter(h => getHabitCategoryDisplay(h) === tracker.selectedCategory);
     // Habits only appear from their start date: the focus view checks the selected day,
     // the weekly table checks whether the habit started at some point during the visible week
     const filtered = categoryFiltered.filter(h =>
-        currentViewMode === 'focus' ? isHabitActiveOnKey(h, selectedDateKey) : isHabitActiveInDays(h, weekDays)
+        tracker.viewMode === 'focus'
+            ? isHabitActiveOnKey(h, tracker.selectedDateKey)
+            : isHabitActiveInDays(h, tracker.weekDays)
     );
 
     if (filtered.length === 0 && categoryFiltered.length > 0) {
@@ -2762,7 +2690,7 @@ function renderHabitsList() {
             `
             <div class="bg-white dark:bg-slate-900 rounded-2xl p-10 text-center border border-dashed border-slate-300 dark:border-slate-700">
                 
-                <h3 class="text-sm font-bold text-slate-800 dark:text-slate-100">${currentViewMode === 'focus' ? 'אין הרגלים פעילים ביום הזה' : 'אין הרגלים פעילים בשבוע הזה'}</h3>
+                <h3 class="text-sm font-bold text-slate-800 dark:text-slate-100">${tracker.viewMode === 'focus' ? 'אין הרגלים פעילים ביום הזה' : 'אין הרגלים פעילים בשבוע הזה'}</h3>
                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 mb-4">כל הרגל מופיע רק מתאריך ההתחלה שלו ועד שהועבר לארכיון. אפשר לשנות את תאריך ההתחלה בעריכת ההרגל.</p>
                 <button data-action="jumpToToday" class="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-sm transition">חזרה להיום</button>
             </div>
@@ -2802,11 +2730,11 @@ function renderHabitsList() {
         return;
     }
 
-    if (currentViewMode === 'focus') {
+    if (tracker.viewMode === 'focus') {
         container.className = 'space-y-6';
-        const selectedDayObj = weekDays.find(d => d.key === selectedDateKey) || weekDays[0];
+        const selectedDayObj = tracker.weekDays.find(d => d.key === tracker.selectedDateKey) || tracker.weekDays[0];
         const selectedDayOfWeek = selectedDayObj.dateObj.getDay();
-        const isSelectedDayFuture = isFutureDateKey(selectedDateKey);
+        const isSelectedDayFuture = isFutureDateKey(tracker.selectedDateKey);
 
         // 4 Logical Groups:
         // 1. Scheduled Today - Not Done Yet
@@ -2819,9 +2747,9 @@ function renderHabitsList() {
         const unscheduledRestHabits = [];
 
         // Each card uses the settings in force on the selected day
-        const dayHabits = filtered.map(h => habitOn(h, selectedDateKey));
+        const dayHabits = filtered.map(h => habitOn(h, tracker.selectedDateKey));
         dayHabits.forEach(habit => {
-            const isDone = !isSelectedDayFuture && !!(habit.history && habit.history[selectedDateKey]);
+            const isDone = !isSelectedDayFuture && !!(habit.history && habit.history[tracker.selectedDateKey]);
             if (habit.goalType === 'flexible') {
                 flexibleHabits.push(habit);
             } else if (isHabitScheduledForDayOfWeek(habit, selectedDayOfWeek)) {
@@ -2853,13 +2781,14 @@ function renderHabitsList() {
         const isDoneOnDay = h =>
             !isSelectedDayFuture &&
             (h._slot !== undefined
-                ? isSlotDone(h, selectedDateKey, h._slot)
-                : !!(h.history && h.history[selectedDateKey]));
+                ? isSlotDone(h, tracker.selectedDateKey, h._slot)
+                : !!(h.history && h.history[tracker.selectedDateKey]));
         const flexInPlan = flexibleHabits.filter(
             h =>
                 hasAnyTime(h) &&
                 (isDoneOnDay(h) ||
-                    getWeeklyCountForHabit(h, weekDays) < Math.max(1, getWeeklyGoalForHabit(h, weekDays)))
+                    getWeeklyCountForHabit(h, tracker.weekDays) <
+                        Math.max(1, getWeeklyGoalForHabit(h, tracker.weekDays)))
         );
         const usePlan = orderedScheduled.some(h => hasAnyTime(h)) || flexInPlan.length > 0;
 
@@ -2870,7 +2799,7 @@ function renderHabitsList() {
                 .sort((x, y) => timeToMinutes(x.time) - timeToMinutes(y.time) || compareByName(x.name, y.name));
             // Live state for today's open items: now / next / past
             const status = new Map();
-            if (selectedDateKey === getDateKeyDaysAgo(0)) {
+            if (tracker.selectedDateKey === getDateKeyDaysAgo(0)) {
                 const nowD = new Date();
                 const nowMin = nowD.getHours() * 60 + nowD.getMinutes();
                 const open = timed.filter(h => !isDoneOnDay(h));
@@ -2936,16 +2865,16 @@ function renderHabitsList() {
         if (unscheduledRestHabits.length > 0) {
             sectionsHtml += `
                 <div class="pt-2 border-t border-slate-200/70 dark:border-slate-800/80">
-                    <button type="button" id="restGroupToggle" data-action="toggleRestGroup" aria-expanded="${unscheduledSectionExpanded}" aria-controls="restGroupReveal" class="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-slate-200/60 dark:bg-slate-900/80 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition">
+                    <button type="button" id="restGroupToggle" data-action="toggleRestGroup" aria-expanded="${tracker.restGroupExpanded}" aria-controls="restGroupReveal" class="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-slate-200/60 dark:bg-slate-900/80 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition">
                         <div class="flex items-center gap-2">
                             <span>לא מתוכננים היום (ימי מנוחה)</span>
                             <span class="px-2 py-0.5 rounded-full bg-slate-300/70 dark:bg-slate-800 text-xs font-semibold">${unscheduledRestHabits.length}</span>
                         </div>
                         <span class="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
-                            <span class="inline-flex items-center gap-1"><span data-toggle-text>${unscheduledSectionExpanded ? 'הסתר' : 'הצג הכל'}</span>${icon('chevronDown', 'w-4 h-4 transition-transform' + (unscheduledSectionExpanded ? ' rotate-180' : ''))}</span>
+                            <span class="inline-flex items-center gap-1"><span data-toggle-text>${tracker.restGroupExpanded ? 'הסתר' : 'הצג הכל'}</span>${icon('chevronDown', 'w-4 h-4 transition-transform' + (tracker.restGroupExpanded ? ' rotate-180' : ''))}</span>
                         </span>
                     </button>
-                    <div id="restGroupReveal" class="reveal ${unscheduledSectionExpanded ? 'is-open' : ''}" ${unscheduledSectionExpanded ? '' : 'inert'}>
+                    <div id="restGroupReveal" class="reveal ${tracker.restGroupExpanded ? 'is-open' : ''}" ${tracker.restGroupExpanded ? '' : 'inert'}>
                         <div>
                             <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 pt-3">
                                 ${unscheduledRestHabits.map((h, i) => `<div class="stagger-item grid" style="--i:${Math.min(i, 5)}">${buildHabitFocusCardHtml(h, selectedDayObj, isSelectedDayFuture)}</div>`).join('')}
@@ -2961,9 +2890,9 @@ function renderHabitsList() {
         // Weekly Matrix Table (focused purely on logging across the week)
         container.className = 'space-y-3';
 
-        const desktopHeaders = weekDays
+        const desktopHeaders = tracker.weekDays
             .map(d => {
-                const isSelected = d.key === selectedDateKey;
+                const isSelected = d.key === tracker.selectedDateKey;
                 return `
                 <th scope="col" ${isSelected ? 'aria-current="date"' : ''} class="p-1 text-center ${isSelected ? 'bg-indigo-50/80 dark:bg-indigo-950/40' : ''}">
                     <button type="button" ${d.isFuture ? 'disabled' : `data-action="selectDay" data-key="${d.key}"`} title="${d.isFuture ? 'תאריך עתידי — לא ניתן לבחור' : `בחירת ${d.dayFull}`}" aria-pressed="${isSelected}" class="w-full min-h-[44px] py-1.5 px-1 rounded-lg transition ${
@@ -2985,16 +2914,16 @@ function renderHabitsList() {
             .map(habit => {
                 const colorMeta = getColorMeta(habit.color);
                 const streakText = getHabitStreakText(habit);
-                const weeklyCount = getWeeklyCountForHabit(habit, weekDays);
-                const weeklyGoal = getWeeklyGoalForHabit(habit, weekDays);
+                const weeklyCount = getWeeklyCountForHabit(habit, tracker.weekDays);
+                const weeklyGoal = getWeeklyGoalForHabit(habit, tracker.weekDays);
                 const goalLabel = getHabitGoalLabel(habit);
                 const isFlexible = habit.goalType === 'flexible';
 
-                const dayCells = weekDays
+                const dayCells = tracker.weekDays
                     .map(d => {
                         const isDayFuture = d.isFuture || isFutureDateKey(d.key);
                         const checked = !isDayFuture && !!(habit.history && habit.history[d.key]);
-                        const isSelected = d.key === selectedDateKey;
+                        const isSelected = d.key === tracker.selectedDateKey;
                         const isDayScheduled = isHabitScheduledOnKey(habit, d.key, d.dateObj.getDay());
                         const isDayFlexible = isFlexibleOnKey(habit, d.key);
                         const isBeforeStart = !isHabitActiveOnKey(habit, d.key);
@@ -3007,7 +2936,7 @@ function renderHabitsList() {
                         }
                         return `
                     <td class="p-2 text-center ${isSelected ? 'bg-indigo-50/30 dark:bg-indigo-950/20' : ''}">
-                        <button type="button" ${isDayFuture ? 'disabled' : `data-action="toggleDay" data-id="${escapeHtml(habit.id)}" data-key="${d.key}"`} data-cell-pop="${lastToggle && lastToggle.on && lastToggle.id === habit.id && lastToggle.key === d.key ? '1' : ''}" title="${isDayFuture ? 'תאריך עתידי - לא ניתן לסמן' : isDayFlexible ? 'גמיש השבוע' : isDayScheduled ? 'יום מתוכנן' : 'יום מנוחה'}" aria-label="סמן ${escapeHtml(habit.name)} ב${d.dayFull}" class="w-10 h-10 mx-auto rounded-xl border flex items-center justify-center transition ${
+                        <button type="button" ${isDayFuture ? 'disabled' : `data-action="toggleDay" data-id="${escapeHtml(habit.id)}" data-key="${d.key}"`} data-cell-pop="${motion.lastToggle && motion.lastToggle.on && motion.lastToggle.id === habit.id && motion.lastToggle.key === d.key ? '1' : ''}" title="${isDayFuture ? 'תאריך עתידי - לא ניתן לסמן' : isDayFlexible ? 'גמיש השבוע' : isDayScheduled ? 'יום מתוכנן' : 'יום מנוחה'}" aria-label="סמן ${escapeHtml(habit.name)} ב${d.dayFull}" class="w-10 h-10 mx-auto rounded-xl border flex items-center justify-center transition ${
                             isDayFuture
                                 ? 'bg-transparent border-transparent cursor-not-allowed pointer-events-none'
                                 : checked
@@ -3056,14 +2985,14 @@ function renderHabitsList() {
             .map(habit => {
                 const colorMeta = getColorMeta(habit.color);
                 const streakLongText = getHabitStreakLongText(habit);
-                const weeklyCount = getWeeklyCountForHabit(habit, weekDays);
-                const weeklyGoal = getWeeklyGoalForHabit(habit, weekDays);
+                const weeklyCount = getWeeklyCountForHabit(habit, tracker.weekDays);
+                const weeklyGoal = getWeeklyGoalForHabit(habit, tracker.weekDays);
 
-                const gridButtons = weekDays
+                const gridButtons = tracker.weekDays
                     .map(d => {
                         const isDayFuture = d.isFuture || isFutureDateKey(d.key);
                         const checked = !isDayFuture && !!(habit.history && habit.history[d.key]);
-                        const isSelected = d.key === selectedDateKey;
+                        const isSelected = d.key === tracker.selectedDateKey;
                         if (!isHabitActiveOnKey(habit, d.key)) {
                             return `
                     <span title="לפני תחילת ההרגל" class="flex flex-col items-center py-2 rounded-xl border border-transparent text-slate-300 dark:text-slate-700 select-none">
@@ -3073,7 +3002,7 @@ function renderHabitsList() {
                     `;
                         }
                         return `
-                    <button type="button" ${isDayFuture ? 'disabled' : `data-action="toggleDay" data-id="${escapeHtml(habit.id)}" data-key="${d.key}"`} data-cell-pop="${lastToggle && lastToggle.on && lastToggle.id === habit.id && lastToggle.key === d.key ? '1' : ''}" class="min-h-[44px] flex flex-col items-center justify-center py-2 rounded-xl border transition ${
+                    <button type="button" ${isDayFuture ? 'disabled' : `data-action="toggleDay" data-id="${escapeHtml(habit.id)}" data-key="${d.key}"`} data-cell-pop="${motion.lastToggle && motion.lastToggle.on && motion.lastToggle.id === habit.id && motion.lastToggle.key === d.key ? '1' : ''}" class="min-h-[44px] flex flex-col items-center justify-center py-2 rounded-xl border transition ${
                         isDayFuture
                             ? 'bg-transparent border-transparent cursor-not-allowed pointer-events-none'
                             : checked
@@ -3141,17 +3070,17 @@ function renderManageSection() {
 
     const liveHabits = getLiveHabits();
     const filtered =
-        manageSelectedCategory === 'הכל'
+        manage.selectedCategory === 'הכל'
             ? liveHabits
-            : liveHabits.filter(h => getHabitCategoryDisplay(h) === manageSelectedCategory);
+            : liveHabits.filter(h => getHabitCategoryDisplay(h) === manage.selectedCategory);
 
     if (subtitle) {
         subtitle.textContent = `מוצגים ${filtered.length} מתוך ${liveHabits.length} הרגלים`;
     }
     renderArchiveSection();
-    manageVisibleHabitIds = filtered.map(h => h.id);
-    selectedHabitIds.forEach(id => {
-        if (!manageVisibleHabitIds.includes(id)) selectedHabitIds.delete(id);
+    manage.visibleHabitIds = filtered.map(h => h.id);
+    manage.selectedHabitIds.forEach(id => {
+        if (!manage.visibleHabitIds.includes(id)) manage.selectedHabitIds.delete(id);
     });
     updateManageBulkBar();
 
@@ -3180,7 +3109,7 @@ function renderManageSection() {
                 const streakUnit = getHabitStreakUnit(habit);
                 const totalHistoryChecks = habit.history ? Object.values(habit.history).filter(Boolean).length : 0;
                 const menuId = escapeHtml(`habitMenu_${habit.id}`);
-                const isSelected = manageSelectMode && selectedHabitIds.has(habit.id);
+                const isSelected = manage.selectMode && manage.selectedHabitIds.has(habit.id);
 
                 const daysBadges = HEBREW_DAYS_SHORT.map((dLabel, idx) => {
                     const active = habit.goalType === 'flexible' || isHabitScheduledForDayOfWeek(habit, idx);
@@ -3194,7 +3123,7 @@ function renderManageSection() {
                 }).join('');
 
                 return `
-            <div role="button" tabindex="0" data-habit-card="${escapeHtml(habit.id)}" data-flip-key="m-${escapeHtml(habit.id)}" data-action="manageCard" data-id="${escapeHtml(habit.id)}" data-key-activate ${manageSelectMode ? `aria-pressed="${isSelected}"` : ''} aria-label="${manageSelectMode ? 'בחירת' : 'עריכת'} ${escapeHtml(habit.name)}" class="${flashClassFor(habit.id)} habit-drag-card group cursor-pointer bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border flex flex-col justify-between gap-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition ${
+            <div role="button" tabindex="0" data-habit-card="${escapeHtml(habit.id)}" data-flip-key="m-${escapeHtml(habit.id)}" data-action="manageCard" data-id="${escapeHtml(habit.id)}" data-key-activate ${manage.selectMode ? `aria-pressed="${isSelected}"` : ''} aria-label="${manage.selectMode ? 'בחירת' : 'עריכת'} ${escapeHtml(habit.name)}" class="${flashClassFor(habit.id)} habit-drag-card group cursor-pointer bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border flex flex-col justify-between gap-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 transition ${
                 isSelected
                     ? 'border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50/40 dark:bg-indigo-950/20'
                     : 'border-slate-200/70 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
@@ -3236,9 +3165,9 @@ function renderManageSection() {
                     </div>
 
                     ${
-                        manageSelectMode
+                        manage.selectMode
                             ? `
-                    <span class="shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition ${habit.id === lastSelectToggledId && isSelected ? 'pip-pop' : ''} ${selectModeJustChanged ? 'fade-in-quick' : ''} ${
+                    <span class="shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition ${habit.id === motion.lastSelectToggledId && isSelected ? 'pip-pop' : ''} ${motion.selectModeJustChanged ? 'fade-in-quick' : ''} ${
                         isSelected
                             ? 'bg-indigo-600 border-indigo-600 text-white'
                             : 'border-slate-300 dark:border-slate-600'
@@ -3318,54 +3247,44 @@ document.addEventListener('keydown', e => {
     if (e.key === 'Escape') closeAllMenus();
 });
 
-// ===== Manage: multi-select, bulk actions, drag & drop between categories =====
-let manageSelectMode = false;
-const selectedHabitIds = new Set();
-let manageVisibleHabitIds = [];
-let categorySelectMode = false;
-const selectedCategories = new Set();
-let suppressNextCardClick = false;
-const habitDragState = { pending: null, active: false, ids: [], target: null };
-
-let lastSelectToggledId = null;
-let selectModeJustChanged = false;
 function handleManageCardClick(id) {
-    if (suppressNextCardClick) {
-        suppressNextCardClick = false;
+    if (manage.suppressNextCardClick) {
+        manage.suppressNextCardClick = false;
         return;
     }
-    if (manageSelectMode) {
-        if (selectedHabitIds.has(id)) selectedHabitIds.delete(id);
-        else selectedHabitIds.add(id);
-        lastSelectToggledId = id;
+    if (manage.selectMode) {
+        if (manage.selectedHabitIds.has(id)) manage.selectedHabitIds.delete(id);
+        else manage.selectedHabitIds.add(id);
+        motion.lastSelectToggledId = id;
         renderManageSection();
-        lastSelectToggledId = null;
+        motion.lastSelectToggledId = null;
     } else {
         openHabitModal(id);
     }
 }
 
 function toggleManageSelectMode() {
-    if (manageSelectMode) exitManageSelectMode();
+    if (manage.selectMode) exitManageSelectMode();
     else {
-        manageSelectMode = true;
+        manage.selectMode = true;
         closeAllMenus();
-        selectModeJustChanged = true;
+        motion.selectModeJustChanged = true;
         renderManageSection();
-        selectModeJustChanged = false;
+        motion.selectModeJustChanged = false;
     }
 }
 
 function exitManageSelectMode() {
-    manageSelectMode = false;
-    selectedHabitIds.clear();
+    manage.selectMode = false;
+    manage.selectedHabitIds.clear();
     renderManageSection();
 }
 
 function toggleSelectAllManageHabits() {
-    const allSelected = manageVisibleHabitIds.length > 0 && manageVisibleHabitIds.every(id => selectedHabitIds.has(id));
-    if (allSelected) selectedHabitIds.clear();
-    else manageVisibleHabitIds.forEach(id => selectedHabitIds.add(id));
+    const allSelected =
+        manage.visibleHabitIds.length > 0 && manage.visibleHabitIds.every(id => manage.selectedHabitIds.has(id));
+    if (allSelected) manage.selectedHabitIds.clear();
+    else manage.visibleHabitIds.forEach(id => manage.selectedHabitIds.add(id));
     renderManageSection();
 }
 
@@ -3373,16 +3292,17 @@ function updateManageBulkBar() {
     const bar = document.getElementById('manageBulkBar');
     const toggle = document.getElementById('manageSelectToggleBtn');
     if (toggle) {
-        toggle.textContent = manageSelectMode ? 'סיום' : 'בחירה';
-        toggle.setAttribute('aria-pressed', String(manageSelectMode));
+        toggle.textContent = manage.selectMode ? 'סיום' : 'בחירה';
+        toggle.setAttribute('aria-pressed', String(manage.selectMode));
     }
     if (!bar) return;
-    bar.classList.toggle('hidden', !manageSelectMode);
+    bar.classList.toggle('hidden', !manage.selectMode);
     const section = document.getElementById('section_manage');
-    if (section) section.classList.toggle('pb-24', manageSelectMode);
-    const n = selectedHabitIds.size;
+    if (section) section.classList.toggle('pb-24', manage.selectMode);
+    const n = manage.selectedHabitIds.size;
     document.getElementById('manageBulkCount').textContent = n === 0 ? 'בחרו הרגלים' : `נבחרו ${n}`;
-    const allSelected = manageVisibleHabitIds.length > 0 && manageVisibleHabitIds.every(id => selectedHabitIds.has(id));
+    const allSelected =
+        manage.visibleHabitIds.length > 0 && manage.visibleHabitIds.every(id => manage.selectedHabitIds.has(id));
     document.getElementById('manageBulkSelectAllBtn').textContent = allSelected ? 'ניקוי בחירה' : 'בחירת הכל';
     document.getElementById('manageBulkArchiveBtn').disabled = n === 0;
     document.getElementById('manageBulkDeleteBtn').disabled = n === 0;
@@ -3396,19 +3316,19 @@ function archiveHabitsByIdsNow(ids) {
     const snapshot = createUndoSnapshot();
     const count = Store.archiveHabits(ids, getDateKeyDaysAgo(0), getDateKeyDaysAgo(-1));
     if (!count) return;
-    manageSelectMode = false;
-    selectedHabitIds.clear();
+    manage.selectMode = false;
+    manage.selectedHabitIds.clear();
     showToast(`${habitCountLabel(count)} הועברו לארכיון`, snapshot);
     renderAll();
 }
 
 function bulkArchiveSelectedHabits() {
-    if (selectedHabitIds.size === 0) return;
-    archiveHabitsByIds([...selectedHabitIds]);
+    if (manage.selectedHabitIds.size === 0) return;
+    archiveHabitsByIds([...manage.selectedHabitIds]);
 }
 
 function bulkDeleteSelectedHabits() {
-    const ids = [...selectedHabitIds];
+    const ids = [...manage.selectedHabitIds];
     if (ids.length === 0) return;
     const label = habitCountLabel(ids.length);
     openConfirmModal(
@@ -3417,8 +3337,8 @@ function bulkDeleteSelectedHabits() {
         () =>
             animateOut(ids, () => {
                 const snapshot = createUndoSnapshot();
-                manageSelectMode = false;
-                selectedHabitIds.clear();
+                manage.selectMode = false;
+                manage.selectedHabitIds.clear();
                 Store.deleteHabits(ids);
                 showToast(`${label} נמחקו`, snapshot);
                 renderAll();
@@ -3447,7 +3367,7 @@ function moveHabitsToCategory(ids, targetCat) {
         renderAll();
     };
     // If the current filter will hide them, let them leave; otherwise they stay and glow
-    const staysVisible = manageSelectedCategory === 'הכל' || manageSelectedCategory === targetCat;
+    const staysVisible = manage.selectedCategory === 'הכל' || manage.selectedCategory === targetCat;
     if (staysVisible) withFlip(apply);
     else
         animateOut(
@@ -3460,7 +3380,7 @@ function moveHabitsToCategory(ids, targetCat) {
 function renderDropTray() {
     const list = document.getElementById('habitDropTrayList');
     const title = document.getElementById('habitDropTrayTitle');
-    const dragged = Store.habits.filter(h => habitDragState.ids.includes(h.id));
+    const dragged = Store.habits.filter(h => manage.drag.ids.includes(h.id));
     const currentCats = new Set(dragged.map(h => getHabitCategoryDisplay(h)));
     const singleCurrent = currentCats.size === 1 ? [...currentCats][0] : null;
     title.textContent = dragged.length > 1 ? `העברת ${dragged.length} הרגלים — שחררו על קטגוריה` : 'שחררו על קטגוריה';
@@ -3477,11 +3397,11 @@ function renderDropTray() {
 }
 
 function setDropTarget(el) {
-    if (habitDragState.target === el) return;
-    if (habitDragState.target) {
-        habitDragState.target.classList.remove('bg-indigo-600', 'text-white', 'dark:text-white', 'scale-105');
+    if (manage.drag.target === el) return;
+    if (manage.drag.target) {
+        manage.drag.target.classList.remove('bg-indigo-600', 'text-white', 'dark:text-white', 'scale-105');
     }
-    habitDragState.target = el;
+    manage.drag.target = el;
     if (el) el.classList.add('bg-indigo-600', 'text-white', 'dark:text-white', 'scale-105');
 }
 
@@ -3491,11 +3411,11 @@ function moveGhost(x, y) {
 }
 
 function startHabitDrag(x, y) {
-    const p = habitDragState.pending;
+    const p = manage.drag.pending;
     if (!p) return;
-    const ids = manageSelectMode && selectedHabitIds.has(p.id) ? [...selectedHabitIds] : [p.id];
-    habitDragState.active = true;
-    habitDragState.ids = ids;
+    const ids = manage.selectMode && manage.selectedHabitIds.has(p.id) ? [...manage.selectedHabitIds] : [p.id];
+    manage.drag.active = true;
+    manage.drag.ids = ids;
     closeAllMenus();
     const first = Store.habits.find(h => h.id === p.id);
     const ghost = document.getElementById('habitDragGhost');
@@ -3517,34 +3437,34 @@ function startHabitDrag(x, y) {
 }
 
 function endHabitDrag(drop) {
-    const p = habitDragState.pending;
+    const p = manage.drag.pending;
     if (p && p.timer) clearTimeout(p.timer);
-    habitDragState.pending = null;
+    manage.drag.pending = null;
     detachDragListeners();
     if (dragFrame) {
         cancelAnimationFrame(dragFrame);
         dragFrame = 0;
     }
     // the drop target follows the last pointer position, even if its frame hadn't run yet
-    if (habitDragState.active && dragPoint) updateDragPosition(dragPoint[0], dragPoint[1]);
+    if (manage.drag.active && dragPoint) updateDragPosition(dragPoint[0], dragPoint[1]);
     dragPoint = null;
-    if (!habitDragState.active) return;
-    const target = habitDragState.target;
-    const ids = habitDragState.ids;
+    if (!manage.drag.active) return;
+    const target = manage.drag.target;
+    const ids = manage.drag.ids;
     setDropTarget(null);
-    habitDragState.active = false;
-    habitDragState.ids = [];
+    manage.drag.active = false;
+    manage.drag.ids = [];
     document.getElementById('habitDragGhost').classList.add('hidden');
     document.getElementById('habitDropTray').classList.add('hidden');
     document.body.classList.remove('is-dragging-habit');
-    suppressNextCardClick = true;
+    manage.suppressNextCardClick = true;
     setTimeout(() => {
-        suppressNextCardClick = false;
+        manage.suppressNextCardClick = false;
     }, 400);
     if (drop && target && target.dataset.current !== 'true') {
-        if (manageSelectMode) {
-            manageSelectMode = false;
-            selectedHabitIds.clear();
+        if (manage.selectMode) {
+            manage.selectMode = false;
+            manage.selectedHabitIds.clear();
         }
         moveHabitsToCategory(ids, target.dataset.dropCategory);
     } else {
@@ -3555,9 +3475,9 @@ function endHabitDrag(drop) {
 // Only pointerdown listens all the time. The move / up / touch / Escape listeners exist only
 // between pressing a card and the end of that press or drag, and are removed right after.
 function onDragPointerMove(e) {
-    const p = habitDragState.pending;
+    const p = manage.drag.pending;
     if (!p) return;
-    if (!habitDragState.active) {
+    if (!manage.drag.active) {
         const moved = Math.hypot(e.clientX - p.x, e.clientY - p.y);
         if (p.pointerType === 'mouse') {
             if (moved > 6) startHabitDrag(e.clientX, e.clientY);
@@ -3565,7 +3485,7 @@ function onDragPointerMove(e) {
         } else {
             if (moved > 10) {
                 clearTimeout(p.timer);
-                habitDragState.pending = null;
+                manage.drag.pending = null;
                 detachDragListeners();
             }
             return;
@@ -3578,27 +3498,27 @@ function onDragPointerUp() {
 }
 function onDragPointerCancel() {
     // On touch, the browser cancels the pointer once the finger moves; the drag continues via touch events.
-    const p = habitDragState.pending;
-    if (habitDragState.active && p && p.pointerType !== 'mouse') return;
+    const p = manage.drag.pending;
+    if (manage.drag.active && p && p.pointerType !== 'mouse') return;
     endHabitDrag(false);
 }
 function onDragTouchMove(e) {
-    if (!habitDragState.active) return;
+    if (!manage.drag.active) return;
     e.preventDefault();
     const t = e.touches[0];
     if (t) scheduleDragPosition(t.clientX, t.clientY);
 }
 function onDragTouchEnd() {
-    if (habitDragState.active) endHabitDrag(true);
+    if (manage.drag.active) endHabitDrag(true);
 }
 function onDragTouchCancel() {
-    if (habitDragState.active) endHabitDrag(false);
+    if (manage.drag.active) endHabitDrag(false);
 }
 function onDragContextMenu(e) {
-    if (habitDragState.pending || habitDragState.active) e.preventDefault();
+    if (manage.drag.pending || manage.drag.active) e.preventDefault();
 }
 function onDragKeydown(e) {
-    if (e.key === 'Escape' && habitDragState.active) endHabitDrag(false);
+    if (e.key === 'Escape' && manage.drag.active) endHabitDrag(false);
 }
 
 const DRAG_LISTENERS = [
@@ -3624,16 +3544,16 @@ function detachDragListeners() {
 }
 
 document.addEventListener('pointerdown', e => {
-    suppressNextCardClick = false;
+    manage.suppressNextCardClick = false;
     const card = e.target.closest('[data-habit-card]');
-    if (!card || currentMainSection !== 'manage') return;
+    if (!card || app.currentMainSection !== 'manage') return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     if (e.target.closest('[aria-haspopup], [data-menu-panel]')) return;
     const p = { id: card.dataset.habitCard, x: e.clientX, y: e.clientY, pointerType: e.pointerType, timer: null };
     if (e.pointerType !== 'mouse') {
         p.timer = setTimeout(() => startHabitDrag(p.x, p.y), 380);
     }
-    habitDragState.pending = p;
+    manage.drag.pending = p;
     attachDragListeners();
 });
 
@@ -3645,7 +3565,7 @@ function scheduleDragPosition(x, y) {
     if (dragFrame) return;
     dragFrame = requestAnimationFrame(() => {
         dragFrame = 0;
-        if (habitDragState.active && dragPoint) updateDragPosition(dragPoint[0], dragPoint[1]);
+        if (manage.drag.active && dragPoint) updateDragPosition(dragPoint[0], dragPoint[1]);
     });
 }
 
@@ -3663,41 +3583,43 @@ function updateCategorySelectUi() {
     const delBtn = document.getElementById('categoryBulkDeleteBtn');
     const toolbar = document.getElementById('categorySelectToolbar');
     if (!toggle) return;
-    if (Store.categories.length === 0 && categorySelectMode) categorySelectMode = false;
+    if (Store.categories.length === 0 && categoryManager.selectMode) categoryManager.selectMode = false;
     toolbar.classList.toggle('hidden', Store.categories.length === 0);
-    toggle.textContent = categorySelectMode ? 'ביטול' : 'בחירה';
-    allBtn.classList.toggle('hidden', !categorySelectMode);
-    const allSelected = Store.categories.length > 0 && Store.categories.every(c => selectedCategories.has(c));
+    toggle.textContent = categoryManager.selectMode ? 'ביטול' : 'בחירה';
+    allBtn.classList.toggle('hidden', !categoryManager.selectMode);
+    const allSelected = Store.categories.length > 0 && Store.categories.every(c => categoryManager.selected.has(c));
     allBtn.textContent = allSelected ? 'ניקוי בחירה' : 'בחירת הכל';
-    info.textContent = categorySelectMode ? `נבחרו ${selectedCategories.size}` : `${Store.categories.length} קטגוריות`;
-    delBtn.classList.toggle('hidden', !categorySelectMode);
-    delBtn.disabled = selectedCategories.size === 0;
+    info.textContent = categoryManager.selectMode
+        ? `נבחרו ${categoryManager.selected.size}`
+        : `${Store.categories.length} קטגוריות`;
+    delBtn.classList.toggle('hidden', !categoryManager.selectMode);
+    delBtn.disabled = categoryManager.selected.size === 0;
     delBtn.textContent =
-        selectedCategories.size > 1 ? `מחיקת ${selectedCategories.size} קטגוריות` : 'מחיקת הקטגוריה שנבחרה';
+        categoryManager.selected.size > 1 ? `מחיקת ${categoryManager.selected.size} קטגוריות` : 'מחיקת הקטגוריה שנבחרה';
 }
 
 function toggleCategorySelectMode() {
-    categorySelectMode = !categorySelectMode;
-    selectedCategories.clear();
-    editingCategoryName = null;
+    categoryManager.selectMode = !categoryManager.selectMode;
+    categoryManager.selected.clear();
+    categoryManager.editingName = null;
     renderCategoryManagerItems();
 }
 
 function toggleCategorySelected(cat) {
-    if (selectedCategories.has(cat)) selectedCategories.delete(cat);
-    else selectedCategories.add(cat);
+    if (categoryManager.selected.has(cat)) categoryManager.selected.delete(cat);
+    else categoryManager.selected.add(cat);
     renderCategoryManagerItems();
 }
 
 function toggleSelectAllCategories() {
-    const allSelected = Store.categories.every(c => selectedCategories.has(c));
-    if (allSelected) selectedCategories.clear();
-    else Store.categories.forEach(c => selectedCategories.add(c));
+    const allSelected = Store.categories.every(c => categoryManager.selected.has(c));
+    if (allSelected) categoryManager.selected.clear();
+    else Store.categories.forEach(c => categoryManager.selected.add(c));
     renderCategoryManagerItems();
 }
 
 function bulkDeleteSelectedCategories() {
-    const cats = [...selectedCategories];
+    const cats = [...categoryManager.selected];
     if (cats.length === 0) return;
     const affected = Store.habits.filter(h => cats.includes((h.category || '').trim())).length;
     const what = cats.length === 1 ? `הקטגוריה "${cats[0]}"` : `${cats.length} קטגוריות`;
@@ -3710,10 +3632,10 @@ function bulkDeleteSelectedCategories() {
         msg,
         () => {
             const snapshot = createUndoSnapshot();
-            if (cats.includes(trackerSelectedCategory)) trackerSelectedCategory = 'הכל';
-            if (cats.includes(manageSelectedCategory)) manageSelectedCategory = 'הכל';
-            selectedCategories.clear();
-            categorySelectMode = false;
+            if (cats.includes(tracker.selectedCategory)) tracker.selectedCategory = 'הכל';
+            if (cats.includes(manage.selectedCategory)) manage.selectedCategory = 'הכל';
+            categoryManager.selected.clear();
+            categoryManager.selectMode = false;
             Store.deleteCategories(cats);
             populateCategorySelectDropdown();
             renderAll();
@@ -3726,10 +3648,10 @@ function bulkDeleteSelectedCategories() {
 
 function getTrackerVisibleHabits() {
     const byCategory =
-        trackerSelectedCategory === 'הכל'
+        tracker.selectedCategory === 'הכל'
             ? Store.habits
-            : Store.habits.filter(h => getHabitCategoryDisplay(h) === trackerSelectedCategory);
-    return byCategory.filter(h => isHabitActiveOnKey(h, selectedDateKey));
+            : Store.habits.filter(h => getHabitCategoryDisplay(h) === tracker.selectedCategory);
+    return byCategory.filter(h => isHabitActiveOnKey(h, tracker.selectedDateKey));
 }
 
 // slot: which occurrence, for a habit done several times a day (omit to toggle the whole day)
@@ -3763,36 +3685,38 @@ function toggleHabitDay(habitId, dateKey, slot) {
         playFeedbackSound(newState ? 'check' : 'uncheck');
     }
 
-    lastToggledHabitId = newState ? habitId : null;
-    lastToggle = { id: habitId, key: dateKey, on: newState, slot: result.slot };
-    if (newState && !wasAllDone && nowAllDone) celebrateDayKey = dateKey;
+    motion.lastToggledHabitId = newState ? habitId : null;
+    motion.lastToggle = { id: habitId, key: dateKey, on: newState, slot: result.slot };
+    if (newState && !wasAllDone && nowAllDone) motion.celebrateDayKey = dateKey;
     if (newState && navigator.vibrate && window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
         try {
             navigator.vibrate(10);
         } catch (e) {}
     }
     renderAll();
-    lastToggledHabitId = null;
-    lastToggle = null;
-    celebrateDayKey = null;
+    motion.lastToggledHabitId = null;
+    motion.lastToggle = null;
+    motion.celebrateDayKey = null;
 }
 
 function markAllForSelectedDay() {
-    if (isFutureDateKey(selectedDateKey)) {
+    if (isFutureDateKey(tracker.selectedDateKey)) {
         showToast('לא ניתן לסמן הרגלים בתאריך שעוד לא הגיע');
         return;
     }
     if (Store.habits.length === 0) return;
-    const selectedDayObj = weekDays.find(d => d.key === selectedDateKey) || weekDays[0];
+    const selectedDayObj = tracker.weekDays.find(d => d.key === tracker.selectedDateKey) || tracker.weekDays[0];
     const dayIdx = selectedDayObj.dateObj.getDay();
     // Only the habits the user can actually see (respects the category filter)
-    const targetHabits = getTrackerVisibleHabits().filter(h => isHabitScheduledOnKey(h, selectedDateKey, dayIdx));
+    const targetHabits = getTrackerVisibleHabits().filter(h =>
+        isHabitScheduledOnKey(h, tracker.selectedDateKey, dayIdx)
+    );
     if (targetHabits.length === 0) return;
 
     const snapshot = createUndoSnapshot();
     Store.markDay(
         targetHabits.map(h => h.id),
-        selectedDateKey
+        tracker.selectedDateKey
     );
     playFeedbackSound('celebrate');
     const label = selectedDayObj.isToday ? 'היום' : selectedDayObj.dayFull;
@@ -3801,52 +3725,39 @@ function markAllForSelectedDay() {
 }
 
 function clearAllForSelectedDay() {
-    if (isFutureDateKey(selectedDateKey)) return;
+    if (isFutureDateKey(tracker.selectedDateKey)) return;
     const visibleHabits = getTrackerVisibleHabits();
-    const anyChecked = visibleHabits.some(h => hasAnyMarkOnDay(h, selectedDateKey));
+    const anyChecked = visibleHabits.some(h => hasAnyMarkOnDay(h, tracker.selectedDateKey));
     if (!anyChecked) return;
 
     const snapshot = createUndoSnapshot();
     Store.clearDay(
         visibleHabits.map(h => h.id),
-        selectedDateKey
+        tracker.selectedDateKey
     );
     playFeedbackSound('uncheck');
     showToast('הסימונים ליום זה נוקו', snapshot);
     renderAll();
 }
 
-// Save button state: needs a name; when editing, also needs a real change
-let habitModalInitialState = null;
-
 function getHabitFormState() {
-    const goalType = selectedModalGoalType;
+    const goalType = habitForm.goalType;
     return JSON.stringify({
         name: (document.getElementById('habitNameInput')?.value || '').trim(),
         category: document.getElementById('habitCategoryInput')?.value || '',
         startDate: document.getElementById('habitStartDateInput')?.value || '',
         goalType,
         weeklyGoal: goalType === 'flexible' ? String(document.getElementById('habitGoalInput')?.value || '') : '',
-        fixedDays: goalType === 'fixed_days' ? [...selectedModalFixedDays].sort((a, b) => a - b) : [],
+        fixedDays: goalType === 'fixed_days' ? [...habitForm.fixedDays].sort((a, b) => a - b) : [],
         note: (document.getElementById('habitNoteInput')?.value || '').trim(),
-        icon: selectedModalIcon,
-        color: selectedModalColor,
+        icon: habitForm.icon,
+        color: habitForm.color,
         timing: (() => {
             const d = getModalScheduleDef();
             return [d.time, d.duration, d.dayTimes, d.slotTimes];
         })()
     });
 }
-
-// ---- Time & duration fields ----
-// ===== Time editor: once a day / several times a day / different times per day =====
-// The window keeps a small model; one hour + minute pair edits the cell picked with the chips.
-const timeModel = {
-    uniform: ['', '', '', ''], // every day the same
-    cells: Array.from({ length: 7 }, () => ['', '', '', '']), // per weekday, when days differ
-    day: 0,
-    slot: 0
-};
 
 function isPerDayTimesOn() {
     return !!document.getElementById('habitPerDayToggle')?.checked;
@@ -3857,26 +3768,26 @@ function modalSlotCount() {
 }
 
 function modalActiveWeekdays() {
-    return scheduleWeekdays({ goalType: selectedModalGoalType, fixedDays: selectedModalFixedDays });
+    return scheduleWeekdays({ goalType: habitForm.goalType, fixedDays: habitForm.fixedDays });
 }
 
 function timeModelRow(day) {
-    return isPerDayTimesOn() ? timeModel.cells[day] : timeModel.uniform;
+    return isPerDayTimesOn() ? habitForm.timeModel.cells[day] : habitForm.timeModel.uniform;
 }
 
 function readModalTime() {
     const n = modalSlotCount();
     const duration = Number(document.getElementById('habitDuration')?.value) || 0;
     if (isPerDayTimesOn())
-        return { time: '', duration, slotTimes: null, dayTimes: timeModel.cells.map(r => r.slice(0, n)) };
-    if (n > 1) return { time: '', duration, dayTimes: null, slotTimes: timeModel.uniform.slice(0, n) };
-    const t = timeModel.uniform[0] || '';
+        return { time: '', duration, slotTimes: null, dayTimes: habitForm.timeModel.cells.map(r => r.slice(0, n)) };
+    if (n > 1) return { time: '', duration, dayTimes: null, slotTimes: habitForm.timeModel.uniform.slice(0, n) };
+    const t = habitForm.timeModel.uniform[0] || '';
     return { time: t, duration: t ? duration : 0, dayTimes: null, slotTimes: null };
 }
 
 // Show the picked cell's time in the hour / minute fields
 function loadEditorFromCell() {
-    const t = timeModelRow(timeModel.day)[timeModel.slot] || '';
+    const t = timeModelRow(habitForm.timeModel.day)[habitForm.timeModel.slot] || '';
     const hourEl = document.getElementById('habitTimeHour');
     const minEl = document.getElementById('habitTimeMinute');
     if (t) {
@@ -3894,7 +3805,7 @@ function loadEditorFromCell() {
 function onTimeEditorChange() {
     const hour = document.getElementById('habitTimeHour').value;
     const minute = document.getElementById('habitTimeMinute').value || '00';
-    timeModelRow(timeModel.day)[timeModel.slot] = hour ? `${hour}:${minute}` : '';
+    timeModelRow(habitForm.timeModel.day)[habitForm.timeModel.slot] = hour ? `${hour}:${minute}` : '';
     syncHabitTimeFields();
 }
 
@@ -3904,14 +3815,14 @@ function focusAfterRender(id) {
 }
 
 function pickTimeDay(d) {
-    timeModel.day = d;
+    habitForm.timeModel.day = d;
     loadEditorFromCell();
     syncHabitTimeFields();
     focusAfterRender(`timeDayChip_${d}`);
 }
 
 function pickTimeSlot(i) {
-    timeModel.slot = i;
+    habitForm.timeModel.slot = i;
     loadEditorFromCell();
     syncHabitTimeFields();
     focusAfterRender(`timeSlotChip_${i}`);
@@ -3921,11 +3832,11 @@ function pickTimeSlot(i) {
 function togglePerDayTimes(on) {
     const active = modalActiveWeekdays();
     if (on) {
-        timeModel.cells = Array.from({ length: 7 }, () => [...timeModel.uniform]);
-        if (!active.includes(timeModel.day)) timeModel.day = active[0];
+        habitForm.timeModel.cells = Array.from({ length: 7 }, () => [...habitForm.timeModel.uniform]);
+        if (!active.includes(habitForm.timeModel.day)) habitForm.timeModel.day = active[0];
     } else {
-        const src = active.find(d => timeModel.cells[d].some(Boolean));
-        timeModel.uniform = [...timeModel.cells[src !== undefined ? src : active[0]]];
+        const src = active.find(d => habitForm.timeModel.cells[d].some(Boolean));
+        habitForm.timeModel.uniform = [...habitForm.timeModel.cells[src !== undefined ? src : active[0]]];
     }
     loadEditorFromCell();
     syncHabitTimeFields();
@@ -3935,20 +3846,20 @@ function togglePerDayTimes(on) {
 // Occurrences beyond the new count are cleared, so they don't come back unexpectedly
 function setModalTimesPerDay(n) {
     for (let i = n; i < MAX_SLOTS; i++) {
-        timeModel.uniform[i] = '';
-        timeModel.cells.forEach(r => {
+        habitForm.timeModel.uniform[i] = '';
+        habitForm.timeModel.cells.forEach(r => {
             r[i] = '';
         });
     }
-    if (timeModel.slot >= n) timeModel.slot = 0;
+    if (habitForm.timeModel.slot >= n) habitForm.timeModel.slot = 0;
     loadEditorFromCell();
     syncHabitTimeFields();
     updateHabitSaveState();
 }
 
 function copyDayTimesToAll() {
-    const src = [...timeModel.cells[timeModel.day]];
-    timeModel.cells = timeModel.cells.map(() => [...src]);
+    const src = [...habitForm.timeModel.cells[habitForm.timeModel.day]];
+    habitForm.timeModel.cells = habitForm.timeModel.cells.map(() => [...src]);
     syncHabitTimeFields();
     updateHabitSaveState();
 }
@@ -3978,12 +3889,12 @@ function setModalTime(time, duration, dayTimes = null, slotTimes = null) {
     document.getElementById('habitTimesPerDay').value = String(n);
     document.getElementById('habitPerDayToggle').checked = !!dayTimes;
     const pad = r => [...r, '', '', '', ''].slice(0, MAX_SLOTS);
-    timeModel.uniform = pad(slotTimes || [time || '']);
-    timeModel.cells = Array.from({ length: 7 }, (_, d) =>
-        pad(dayTimes ? (Array.isArray(dayTimes[d]) ? dayTimes[d] : [dayTimes[d] || '']) : timeModel.uniform)
+    habitForm.timeModel.uniform = pad(slotTimes || [time || '']);
+    habitForm.timeModel.cells = Array.from({ length: 7 }, (_, d) =>
+        pad(dayTimes ? (Array.isArray(dayTimes[d]) ? dayTimes[d] : [dayTimes[d] || '']) : habitForm.timeModel.uniform)
     );
-    timeModel.day = modalActiveWeekdays()[0];
-    timeModel.slot = 0;
+    habitForm.timeModel.day = modalActiveWeekdays()[0];
+    habitForm.timeModel.slot = 0;
     const hasTime = !!time || !!dayTimes || !!slotTimes;
     ensureSelectOption(durEl, String(duration || 0), `${duration} דקות`);
     durEl.value = hasTime ? String(duration || 0) : '0';
@@ -4015,12 +3926,12 @@ function syncHabitTimeFields() {
     }
     const perDay = isPerDayTimesOn();
     let moved = false;
-    if (perDay && !active.includes(timeModel.day)) {
-        timeModel.day = active[0];
+    if (perDay && !active.includes(habitForm.timeModel.day)) {
+        habitForm.timeModel.day = active[0];
         moved = true;
     }
-    if (timeModel.slot >= n) {
-        timeModel.slot = 0;
+    if (habitForm.timeModel.slot >= n) {
+        habitForm.timeModel.slot = 0;
         moved = true;
     }
     if (moved) loadEditorFromCell();
@@ -4032,14 +3943,14 @@ function syncHabitTimeFields() {
             dayChips,
             active
                 .map(d => {
-                    const t = timeModel.cells[d][timeModel.slot] || '';
+                    const t = habitForm.timeModel.cells[d][habitForm.timeModel.slot] || '';
                     return timeChipHtml(
                         `timeDayChip_${d}`,
                         `data-action="pickTimeDay" data-arg="${d}"`,
-                        d === timeModel.day,
+                        d === habitForm.timeModel.day,
                         HEBREW_DAYS_SHORT[d],
                         t,
-                        `${HEBREW_DAYS_FULL[d]}${n > 1 ? `, פעם ${timeModel.slot + 1}` : ''}: ${t || 'ללא שעה'}`
+                        `${HEBREW_DAYS_FULL[d]}${n > 1 ? `, פעם ${habitForm.timeModel.slot + 1}` : ''}: ${t || 'ללא שעה'}`
                     );
                 })
                 .join('')
@@ -4048,7 +3959,7 @@ function syncHabitTimeFields() {
     const slotChips = document.getElementById('timeSlotChips');
     slotChips.classList.toggle('hidden', n < 2);
     if (n > 1) {
-        const row = timeModelRow(timeModel.day);
+        const row = timeModelRow(habitForm.timeModel.day);
         patchHTML(
             slotChips,
             [...Array(n).keys()]
@@ -4056,10 +3967,10 @@ function syncHabitTimeFields() {
                     timeChipHtml(
                         `timeSlotChip_${i}`,
                         `data-action="pickTimeSlot" data-arg="${i}"`,
-                        i === timeModel.slot,
+                        i === habitForm.timeModel.slot,
                         `פעם ${i + 1}`,
                         row[i] || '',
-                        `פעם ${i + 1}${perDay ? `, ${HEBREW_DAYS_FULL[timeModel.day]}` : ''}: ${row[i] || 'ללא שעה'}`,
+                        `פעם ${i + 1}${perDay ? `, ${HEBREW_DAYS_FULL[habitForm.timeModel.day]}` : ''}: ${row[i] || 'ללא שעה'}`,
                         'flex-1'
                     )
                 )
@@ -4068,10 +3979,10 @@ function syncHabitTimeFields() {
     }
     const caption = document.getElementById('timeEditCaption');
     caption.classList.toggle('hidden', !perDay && n < 2);
-    caption.textContent = `השעה של ${[perDay ? HEBREW_DAYS_FULL[timeModel.day] : '', n > 1 ? `פעם ${timeModel.slot + 1}` : ''].filter(Boolean).join(', ')}:`;
+    caption.textContent = `השעה של ${[perDay ? HEBREW_DAYS_FULL[habitForm.timeModel.day] : '', n > 1 ? `פעם ${habitForm.timeModel.slot + 1}` : ''].filter(Boolean).join(', ')}:`;
     const copyBtn = document.getElementById('copyDayTimesBtn');
     copyBtn.classList.toggle('hidden', !perDay);
-    copyBtn.textContent = `העתקת ${n > 1 ? 'השעות' : 'השעה'} של ${HEBREW_DAYS_FULL[timeModel.day]} לכל הימים`;
+    copyBtn.textContent = `העתקת ${n > 1 ? 'השעות' : 'השעה'} של ${HEBREW_DAYS_FULL[habitForm.timeModel.day]} לכל הימים`;
 
     setSelectDisabled('habitTimeMinute', !document.getElementById('habitTimeHour').value);
     setSelectDisabled('habitDuration', !hasAnyTime(readModalTime()));
@@ -4081,10 +3992,10 @@ function syncHabitTimeFields() {
 }
 
 function getModalScheduleDef() {
-    const goalType = selectedModalGoalType;
+    const goalType = habitForm.goalType;
     return normalizeScheduleFields({
         goalType,
-        fixedDays: goalType === 'fixed_days' ? [...selectedModalFixedDays] : [],
+        fixedDays: goalType === 'fixed_days' ? [...habitForm.fixedDays] : [],
         weeklyGoal: goalType === 'flexible' ? parseInt(document.getElementById('habitGoalInput')?.value, 10) || 4 : 7,
         ...readModalTime()
     });
@@ -4121,11 +4032,8 @@ function updateHabitTimeHint() {
             : `יופיע במסך המעקב ${dayPartOf(def.time).inLabel}, ${timeRangeText(def.time, def.duration)}`;
 }
 
-// ---- "Which days does the change apply to?" ----
-let scheduleScope = 'forward';
-
 function setScheduleScope(scope) {
-    scheduleScope = scope;
+    habitForm.scheduleScope = scope;
     updateScheduleScopeBox();
 }
 
@@ -4155,7 +4063,7 @@ function updateScheduleScopeBox() {
     }
     ['forward', 'all'].forEach(sc => {
         const btn = document.getElementById(`scopeBtn_${sc}`);
-        const on = scheduleScope === sc;
+        const on = habitForm.scheduleScope === sc;
         btn.setAttribute('aria-checked', String(on));
         btn.classList.toggle('bg-white', on);
         btn.classList.toggle('dark:bg-slate-900', on);
@@ -4170,7 +4078,7 @@ function updateScheduleScopeBox() {
         btn.classList.toggle('dark:text-amber-300/70', !on);
     });
     document.getElementById('scheduleScopeText').textContent =
-        scheduleScope === 'forward'
+        habitForm.scheduleScope === 'forward'
             ? `הימים שעברו יישארו לפי ההגדרה הקודמת (${describeScheduleVersion(prev, hasAnyTime(def))}), כך שהסטטיסטיקה שלהם לא תשתנה.`
             : 'ההגדרה החדשה תחול גם על כל הימים שעברו, והסטטיסטיקה שלהם תחושב מחדש. מתאים לתיקון טעות.';
 }
@@ -4180,7 +4088,7 @@ function isHabitFormSaveable() {
     if (!name) return false;
     const isEditing = !!document.getElementById('habitIdInput')?.value;
     if (!isEditing) return true;
-    return habitModalInitialState === null || getHabitFormState() !== habitModalInitialState;
+    return habitForm.initialState === null || getHabitFormState() !== habitForm.initialState;
 }
 
 // Enter saves when possible; with an empty name it points at the field instead of doing nothing
@@ -4204,7 +4112,7 @@ function updateHabitSaveState() {
 }
 
 function setModalGoalType(type) {
-    selectedModalGoalType = type;
+    habitForm.goalType = type;
     const types = ['daily', 'flexible', 'fixed_days'];
     types.forEach(t => {
         const btn = document.getElementById(`goalTypeBtn_${t}`);
@@ -4226,21 +4134,21 @@ function setModalGoalType(type) {
 }
 
 function toggleModalFixedDay(dayIdx) {
-    if (selectedModalFixedDays.includes(dayIdx)) {
-        if (selectedModalFixedDays.length > 1) {
-            selectedModalFixedDays = selectedModalFixedDays.filter(d => d !== dayIdx);
+    if (habitForm.fixedDays.includes(dayIdx)) {
+        if (habitForm.fixedDays.length > 1) {
+            habitForm.fixedDays = habitForm.fixedDays.filter(d => d !== dayIdx);
         } else {
             showToast('יש לבחור לפחות יום קבוע אחד בשבוע');
             shakeField(document.getElementById('fixedDaysPickerGrid'), false);
             return;
         }
     } else {
-        selectedModalFixedDays.push(dayIdx);
-        selectedModalFixedDays.sort((a, b) => a - b);
-        justPicked = dayIdx;
+        habitForm.fixedDays.push(dayIdx);
+        habitForm.fixedDays.sort((a, b) => a - b);
+        motion.justPicked = dayIdx;
     }
     renderFixedDaysPicker();
-    justPicked = null;
+    motion.justPicked = null;
     updateHabitSaveState();
 }
 
@@ -4249,15 +4157,15 @@ function renderFixedDaysPicker() {
     const badge = document.getElementById('fixedDaysCountBadge');
     if (!grid || !badge) return;
 
-    const count = selectedModalFixedDays.length;
+    const count = habitForm.fixedDays.length;
     badge.textContent = count === 1 ? 'יום אחד נבחר' : `${count} ימים נבחרו`;
 
     patchHTML(
         grid,
         HEBREW_DAYS_SHORT.map((label, idx) => {
-            const active = selectedModalFixedDays.includes(idx);
+            const active = habitForm.fixedDays.includes(idx);
             return `
-            <button type="button" data-action="toggleFixedDay" data-arg="${idx}" aria-pressed="${active}" aria-label="${HEBREW_DAYS_FULL[idx]}" data-cell-pop="${active && justPicked === idx ? '1' : ''}" class="min-w-0 min-h-[44px] py-2.5 rounded-xl font-semibold text-xs border transition-all ${
+            <button type="button" data-action="toggleFixedDay" data-arg="${idx}" aria-pressed="${active}" aria-label="${HEBREW_DAYS_FULL[idx]}" data-cell-pop="${active && motion.justPicked === idx ? '1' : ''}" class="min-w-0 min-h-[44px] py-2.5 rounded-xl font-semibold text-xs border transition-all ${
                 active
                     ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
                     : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:border-indigo-400'
@@ -4295,7 +4203,7 @@ function handleCustomIconInput(input) {
         return;
     } // letters/digits are not icons
     input.value = last;
-    selectedModalIcon = last;
+    habitForm.icon = last;
     renderModalPickers();
     updateHabitSaveState();
 }
@@ -4305,9 +4213,9 @@ function renderModalPickers() {
     // 11 icons + the "+" tile fill two clean rows of 6. If the chosen icon is not among
     // them, it takes the last icon slot (the replaced one stays reachable from the "+" list).
     const iconList = ICON_OPTIONS.slice(0, 11).map(i => ({ emoji: i.emoji, label: i.label }));
-    if (!iconList.some(i => i.emoji === selectedModalIcon)) {
-        const known = ICON_OPTIONS.find(i => i.emoji === selectedModalIcon);
-        iconList[10] = { emoji: selectedModalIcon, label: known ? known.label : 'אייקון מותאם אישית' };
+    if (!iconList.some(i => i.emoji === habitForm.icon)) {
+        const known = ICON_OPTIONS.find(i => i.emoji === habitForm.icon);
+        iconList[10] = { emoji: habitForm.icon, label: known ? known.label : 'אייקון מותאם אישית' };
     }
     const panelOpen = !document.getElementById('customIconPanel').classList.contains('hidden');
     const plusTile = `
@@ -4320,9 +4228,9 @@ function renderModalPickers() {
         iconGrid,
         iconList
             .map(item => {
-                const active = item.emoji === selectedModalIcon;
+                const active = item.emoji === habitForm.icon;
                 return `
-            <button type="button" data-action="selectIcon" title="${escapeHtml(item.label)}" aria-label="אייקון: ${escapeHtml(item.label)}" aria-pressed="${active}" data-cell-pop="${active && justPicked === 'icon' ? '1' : ''}" class="h-11 rounded-xl text-xl flex items-center justify-center border transition ${
+            <button type="button" data-action="selectIcon" title="${escapeHtml(item.label)}" aria-label="אייקון: ${escapeHtml(item.label)}" aria-pressed="${active}" data-cell-pop="${active && motion.justPicked === 'icon' ? '1' : ''}" class="h-11 rounded-xl text-xl flex items-center justify-center border transition ${
                 active
                     ? 'border-indigo-500 bg-indigo-500/15 ring-2 ring-indigo-500/30'
                     : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-indigo-300 dark:hover:border-indigo-700'
@@ -4338,9 +4246,9 @@ function renderModalPickers() {
     patchHTML(
         colorGrid,
         COLOR_OPTIONS.map(c => {
-            const active = c.id === selectedModalColor;
+            const active = c.id === habitForm.color;
             return `
-            <button type="button" data-action="selectColor" data-arg="${c.id}" title="${c.name}" aria-label="צבע ${c.name}" aria-pressed="${active}" data-cell-pop="${active && justPicked === 'color' ? '1' : ''}" class="tap-44 w-10 h-10 shrink-0 rounded-full ${c.bg} flex items-center justify-center text-white text-sm font-bold transition ${
+            <button type="button" data-action="selectColor" data-arg="${c.id}" title="${c.name}" aria-label="צבע ${c.name}" aria-pressed="${active}" data-cell-pop="${active && motion.justPicked === 'color' ? '1' : ''}" class="tap-44 w-10 h-10 shrink-0 rounded-full ${c.bg} flex items-center justify-center text-white text-sm font-bold transition ${
                 active
                     ? 'ring-2 ring-offset-2 ring-indigo-500 dark:ring-offset-slate-900'
                     : 'opacity-75 hover:opacity-100'
@@ -4358,10 +4266,10 @@ function updateHabitPreview() {
     const prev = document.getElementById('habitPreviewIcon');
     const btn = document.getElementById('habitAppearanceBtn');
     if (!prev || !btn) return;
-    const c = COLOR_OPTIONS.find(x => x.id === selectedModalColor) || COLOR_OPTIONS[0];
+    const c = COLOR_OPTIONS.find(x => x.id === habitForm.color) || COLOR_OPTIONS[0];
     prev.className = `w-12 h-12 rounded-xl flex items-center justify-center text-2xl border-2 ${c.softBg} ${c.border}`;
-    prev.textContent = selectedModalIcon;
-    const known = ICON_OPTIONS.find(i => i.emoji === selectedModalIcon);
+    prev.textContent = habitForm.icon;
+    const known = ICON_OPTIONS.find(i => i.emoji === habitForm.icon);
     btn.setAttribute(
         'aria-label',
         `מראה ההרגל: ${known ? known.label : 'אייקון מותאם'}, צבע ${c.name}. שינוי אייקון וצבע`
@@ -4426,7 +4334,6 @@ function updateHabitModalSummaries() {
     }
 }
 
-let justPicked = null; // 'icon' | 'color' | day index — the option that pops on the next render
 function shakeField(el, keepError = true) {
     if (!el) return;
     if (keepError) {
@@ -4449,18 +4356,18 @@ function shakeField(el, keepError = true) {
 }
 
 function selectModalIcon(emoji) {
-    selectedModalIcon = emoji;
-    justPicked = 'icon';
+    habitForm.icon = emoji;
+    motion.justPicked = 'icon';
     renderModalPickers();
-    justPicked = null;
+    motion.justPicked = null;
     updateHabitSaveState();
 }
 
 function selectModalColor(colorId) {
-    selectedModalColor = colorId;
-    justPicked = 'color';
+    habitForm.color = colorId;
+    motion.justPicked = 'color';
     renderModalPickers();
-    justPicked = null;
+    motion.justPicked = null;
     updateHabitSaveState();
 }
 
@@ -4482,10 +4389,10 @@ function openHabitModal(habitId = null) {
         populateCategorySelectDropdown(habit.category || '');
         document.getElementById('habitGoalInput').value = String(Math.min(6, Math.max(1, habit.weeklyGoal || 4)));
         document.getElementById('habitNoteInput').value = habit.note || '';
-        selectedModalIcon = habit.icon || ICON_OPTIONS[0].emoji;
-        selectedModalColor = habit.color || COLOR_OPTIONS[0].id;
-        selectedModalGoalType = habit.goalType || 'daily';
-        selectedModalFixedDays =
+        habitForm.icon = habit.icon || ICON_OPTIONS[0].emoji;
+        habitForm.color = habit.color || COLOR_OPTIONS[0].id;
+        habitForm.goalType = habit.goalType || 'daily';
+        habitForm.fixedDays =
             Array.isArray(habit.fixedDays) && habit.fixedDays.length > 0 ? [...habit.fixedDays] : [0, 2, 4];
         setupStartDateInput(habit.startDate, habit);
         setModalTime(habit.time, habit.duration, habit.dayTimes, habit.slotTimes);
@@ -4493,24 +4400,24 @@ function openHabitModal(habitId = null) {
         titleEl.textContent = 'הרגל חדש';
         document.getElementById('habitIdInput').value = '';
         document.getElementById('habitNameInput').value = '';
-        const activeCat = currentMainSection === 'manage' ? manageSelectedCategory : trackerSelectedCategory;
+        const activeCat = app.currentMainSection === 'manage' ? manage.selectedCategory : tracker.selectedCategory;
         const defaultCat =
             activeCat !== 'הכל' && activeCat !== UNCATEGORIZED_LABEL ? activeCat : Store.categories[0] || '';
         populateCategorySelectDropdown(defaultCat);
         document.getElementById('habitGoalInput').value = '4';
         document.getElementById('habitNoteInput').value = '';
-        selectedModalIcon = ICON_OPTIONS[0].emoji;
-        selectedModalColor = COLOR_OPTIONS[0].id;
-        selectedModalGoalType = 'daily';
-        selectedModalFixedDays = [0, 2, 4];
+        habitForm.icon = ICON_OPTIONS[0].emoji;
+        habitForm.color = COLOR_OPTIONS[0].id;
+        habitForm.goalType = 'daily';
+        habitForm.fixedDays = [0, 2, 4];
         setupStartDateInput(getDateKeyDaysAgo(0), null);
         setModalTime('', 0);
     }
-    scheduleScope = 'forward';
+    habitForm.scheduleScope = 'forward';
 
-    setModalGoalType(selectedModalGoalType);
+    setModalGoalType(habitForm.goalType);
     renderModalPickers();
-    habitModalInitialState = getHabitFormState();
+    habitForm.initialState = getHabitFormState();
     updateHabitSaveState();
     updateHabitModalSummaries();
     showModal(modal);
@@ -4566,20 +4473,20 @@ function saveHabitForm(event) {
     let weeklyGoal = 7;
     let fixedDays = [0, 1, 2, 3, 4, 5, 6];
 
-    if (selectedModalGoalType === 'daily') {
+    if (habitForm.goalType === 'daily') {
         weeklyGoal = 7;
         fixedDays = [0, 1, 2, 3, 4, 5, 6];
-    } else if (selectedModalGoalType === 'flexible') {
+    } else if (habitForm.goalType === 'flexible') {
         weeklyGoal = parseInt(document.getElementById('habitGoalInput').value, 10) || 4;
         fixedDays = [];
-    } else if (selectedModalGoalType === 'fixed_days') {
-        fixedDays = [...selectedModalFixedDays].sort((a, b) => a - b);
+    } else if (habitForm.goalType === 'fixed_days') {
+        fixedDays = [...habitForm.fixedDays].sort((a, b) => a - b);
         weeklyGoal = fixedDays.length;
     }
 
     const { time, duration, dayTimes, slotTimes } = readModalTime();
     const scheduleDef = normalizeScheduleFields({
-        goalType: selectedModalGoalType,
+        goalType: habitForm.goalType,
         fixedDays,
         weeklyGoal,
         time,
@@ -4597,12 +4504,12 @@ function saveHabitForm(event) {
                     name,
                     category,
                     note,
-                    icon: selectedModalIcon,
-                    color: selectedModalColor,
+                    icon: habitForm.icon,
+                    color: habitForm.color,
                     startDate: readStartDateInput(existing)
                 },
                 scheduleDef,
-                scheduleScope
+                habitForm.scheduleScope
             );
         }
         showToast('ההרגל עודכן בהצלחה');
@@ -4613,8 +4520,8 @@ function saveHabitForm(event) {
             category,
             ...scheduleDef,
             note,
-            icon: selectedModalIcon,
-            color: selectedModalColor,
+            icon: habitForm.icon,
+            color: habitForm.color,
             startDate: readStartDateInput(null),
             history: {}
         });
@@ -4663,8 +4570,6 @@ function promptDeleteHabitById(id) {
     );
 }
 
-let archiveSectionExpanded = false;
-
 // Archive: the habit stops appearing from today on (from tomorrow if it was already
 // checked today), while all of its past history keeps counting.
 function archiveHabitById(id) {
@@ -4693,12 +4598,12 @@ function restoreHabitById(id) {
 }
 
 function toggleArchiveSection() {
-    archiveSectionExpanded = !archiveSectionExpanded;
+    manage.archiveExpanded = !manage.archiveExpanded;
     if (
         !setRevealOpen(
             document.getElementById('archiveReveal'),
             document.getElementById('archiveToggle'),
-            archiveSectionExpanded,
+            manage.archiveExpanded,
             'הסתר',
             'הצג'
         )
@@ -4754,15 +4659,15 @@ function renderArchiveSection() {
     patchHTML(
         section,
         `
-        <button type="button" id="archiveToggle" data-action="toggleArchive" aria-expanded="${archiveSectionExpanded}" aria-controls="archiveReveal" class="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-slate-200/60 dark:bg-slate-900/80 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition">
+        <button type="button" id="archiveToggle" data-action="toggleArchive" aria-expanded="${manage.archiveExpanded}" aria-controls="archiveReveal" class="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-slate-200/60 dark:bg-slate-900/80 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition">
             <div class="flex items-center gap-2">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg>
                 <span>ארכיון</span>
                 <span class="px-2 py-0.5 rounded-full bg-slate-300/70 dark:bg-slate-800 text-xs font-semibold">${archived.length}</span>
             </div>
-            <span class="text-xs font-semibold text-indigo-600 dark:text-indigo-400"><span class="inline-flex items-center gap-1"><span data-toggle-text>${archiveSectionExpanded ? 'הסתר' : 'הצג'}</span>${icon('chevronDown', 'w-4 h-4 transition-transform' + (archiveSectionExpanded ? ' rotate-180' : ''))}</span></span>
+            <span class="text-xs font-semibold text-indigo-600 dark:text-indigo-400"><span class="inline-flex items-center gap-1"><span data-toggle-text>${manage.archiveExpanded ? 'הסתר' : 'הצג'}</span>${icon('chevronDown', 'w-4 h-4 transition-transform' + (manage.archiveExpanded ? ' rotate-180' : ''))}</span></span>
         </button>
-        <div id="archiveReveal" class="reveal ${archiveSectionExpanded ? 'is-open' : ''}" ${archiveSectionExpanded ? '' : 'inert'}>
+        <div id="archiveReveal" class="reveal ${manage.archiveExpanded ? 'is-open' : ''}" ${manage.archiveExpanded ? '' : 'inert'}>
             <div>
                 <p class="text-xs text-slate-500 dark:text-slate-400 px-1 pt-3 mb-2">הרגלים בארכיון לא מופיעים במעקב מהיום שהועברו, אבל ההיסטוריה שלהם נשמרת בסטטיסטיקה של הימים הקודמים.</p>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5">${items}</div>
@@ -4777,11 +4682,10 @@ function openResetModal() {
         'איפוס הרגלים לדוגמה?',
         'האם לשחזר את רשימת ההרגלים והקטגוריות לדוגמה ואת נתוני השבוע הנוכחי?',
         () => {
-            weekOffset = 0;
-            weekDays = getWindow7Days(0);
-            trackerSelectedCategory = 'הכל';
-            manageSelectedCategory = 'הכל';
-            selectedDateKey = getDateKeyDaysAgo(0);
+            setWeek(0);
+            tracker.selectedCategory = 'הכל';
+            manage.selectedCategory = 'הכל';
+            tracker.selectedDateKey = getDateKeyDaysAgo(0);
             Store.resetToDefaults(getDefaultHabits);
             showToast('נתוני הדוגמה שוחזרו');
             renderAll();
@@ -4834,7 +4738,7 @@ function hideToast() {
     container.classList.add(...TOAST_HIDDEN);
     container.classList.remove(...TOAST_SHOWN, 'pointer-events-auto', 'toast-paused');
     document.getElementById('toastProgress').classList.remove('is-running');
-    lastActionUndoSnapshot = null;
+    undo.snapshot = null;
     toastTimer = null;
 }
 
@@ -4855,12 +4759,12 @@ function showToast(message, undoSnapshot = null) {
     if (wasVisible) msgEl.classList.remove('toast-text-in');
 
     if (undoSnapshot) {
-        lastActionUndoSnapshot = undoSnapshot;
+        undo.snapshot = undoSnapshot;
         undoBtn.classList.remove('hidden');
         container.classList.remove('pointer-events-none');
         container.classList.add('pointer-events-auto');
     } else {
-        lastActionUndoSnapshot = null;
+        undo.snapshot = null;
         undoBtn.classList.add('hidden');
         container.classList.remove('pointer-events-auto');
     }
@@ -4883,7 +4787,7 @@ function showToast(message, undoSnapshot = null) {
 
 function pauseToast() {
     const container = document.getElementById('toastContainer');
-    if (!toastTimer || !lastActionUndoSnapshot) return;
+    if (!toastTimer || !undo.snapshot) return;
     clearTimeout(toastTimer);
     toastTimer = null;
     toastRemaining = Math.max(800, toastEndsAt - Date.now());
@@ -4906,21 +4810,21 @@ function resumeToast() {
 })();
 
 function toggleTheme() {
-    themeChosenByUser = true;
-    applyThemeUI(!isDarkMode);
+    app.themeChosenByUser = true;
+    applyThemeUI(!app.isDarkMode);
     savePrefs();
 }
 
 if (systemDarkQuery && systemDarkQuery.addEventListener) {
     systemDarkQuery.addEventListener('change', e => {
-        if (!themeChosenByUser) applyThemeUI(e.matches);
+        if (!app.themeChosenByUser) applyThemeUI(e.matches);
     });
 }
 
 function toggleSound() {
-    applySoundUI(!soundEnabled);
+    applySoundUI(!app.soundEnabled);
     savePrefs();
-    showToast(soundEnabled ? 'צלילי משוב הופעלו' : 'צלילי משוב הושתקו');
+    showToast(app.soundEnabled ? 'צלילי משוב הופעלו' : 'צלילי משוב הושתקו');
 }
 
 // ===== Rendering by section =====
@@ -4928,9 +4832,6 @@ function toggleSound() {
 // section is rebuilt when it is opened. (Before, every change rebuilt all three sections,
 // including both charts, even when only the tracker was on screen.)
 const staleSections = new Set(['tracker', 'analytics', 'manage']);
-// true while a section is drawn because it was just opened: "value changed" animations
-// (ring fill, KPI fade) are skipped then, since the old values were never on screen
-let renderingEntry = false;
 const SECTION_RENDERERS = {
     tracker: () => {
         renderHeaderDateStrip();
@@ -4957,11 +4858,11 @@ function renderGreeting() {
 function renderSection(section, { force = false, entry = false } = {}) {
     if (!force && !staleSections.has(section)) return;
     staleSections.delete(section);
-    renderingEntry = entry;
+    motion.renderingEntry = entry;
     try {
         SECTION_RENDERERS[section]();
     } finally {
-        renderingEntry = false;
+        motion.renderingEntry = false;
     }
 }
 
@@ -4971,7 +4872,7 @@ function prerenderHiddenSections() {
     const idle = window.requestIdleCallback || (cb => setTimeout(cb, 200));
     idle(() =>
         Object.keys(SECTION_RENDERERS).forEach(sec => {
-            if (sec !== currentMainSection) renderSection(sec);
+            if (sec !== app.currentMainSection) renderSection(sec);
         })
     );
 }
@@ -4979,7 +4880,7 @@ function prerenderHiddenSections() {
 function renderAll() {
     renderGreeting();
     Object.keys(SECTION_RENDERERS).forEach(sec => staleSections.add(sec));
-    renderSection(currentMainSection);
+    renderSection(app.currentMainSection);
 }
 
 // Fade the far (left, in RTL) edge of a horizontal scroller only while
@@ -5472,18 +5373,18 @@ document.body.addEventListener('keydown', e => {
 // Keeps now / next / past current: refresh the daily list once a minute while it is on screen
 setInterval(() => {
     if (document.hidden) return;
-    if (currentMainSection !== 'tracker' || currentViewMode !== 'focus') return;
-    if (selectedDateKey !== getDateKeyDaysAgo(0)) return;
+    if (app.currentMainSection !== 'tracker' || tracker.viewMode !== 'focus') return;
+    if (tracker.selectedDateKey !== getDateKeyDaysAgo(0)) return;
     const modal = document.getElementById('habitModalBackdrop');
     if (modal && !modal.classList.contains('hidden')) return;
-    if (!Store.habits.some(h => hasAnyTime(habitOn(h, selectedDateKey)))) return;
+    if (!Store.habits.some(h => hasAnyTime(habitOn(h, tracker.selectedDateKey)))) return;
     renderHabitsList();
 }, 60000);
 
 window.addEventListener('DOMContentLoaded', () => {
     enhanceFormControls();
     loadState();
-    switchMainSection(currentMainSection);
+    switchMainSection(app.currentMainSection);
     prerenderHiddenSections();
 
     document.querySelectorAll('.scroll-fade-x').forEach(el => {
