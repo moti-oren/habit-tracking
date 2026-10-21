@@ -1,0 +1,15 @@
+/*
+ * Order matters and mirrors the original page: the custom rules come first and Tailwind last.
+ * The Tailwind Play CDN appended its generated stylesheet after the page's own styles, so Tailwind
+ * (preflight and utilities) wins every specificity tie. Keep it that way.
+ */
+@import './tokens.css';
+@import './base.css';
+@import './components.css';
+@import './animations.css';
+@import './reduced-motion.css';
+@import './overrides.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

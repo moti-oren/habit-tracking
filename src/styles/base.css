@@ -1,0 +1,129 @@
+/*
+ * Design scale
+ *  Radius:  cards/modals 16px (rounded-2xl) · controls 12px (rounded-xl) · small items 8px (rounded-lg)
+ *  Height:  controls 40px (h-10) · primary actions 44px (h-11) · 44px minimum on touch screens (.tap-44)
+ *  Padding: cards p-4 → sm:p-5
+ */
+* {
+    -webkit-tap-highlight-color: transparent;
+    letter-spacing: 0 !important;
+}
+html {
+    color-scheme: light;
+    /* Keyboard focus never lands under the sticky header or the mobile bottom bar */
+    scroll-padding-top: 5.5rem;
+    scroll-padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+}
+html.dark {
+    color-scheme: dark;
+}
+body {
+    font-family: 'Heebo', sans-serif;
+    overscroll-behavior-y: none;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    /* Numbers line up in counters, KPIs, dates and times */
+    font-variant-numeric: tabular-nums;
+}
+h1,
+h2,
+h3,
+h4 {
+    line-height: 1.25;
+    text-wrap: balance;
+}
+p {
+    text-wrap: pretty;
+}
+/* Big numbers sit on one baseline, without extra leading */
+#weeklyRateValue,
+#perfectDaysTileValue,
+#bestStreakValue {
+    line-height: 1;
+}
+/* Dark surfaces: a faint top highlight and a deeper drop instead of a flat card */
+html.dark .rounded-2xl.dark\:bg-slate-900 {
+    --tw-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 1px 3px rgb(0 0 0 / 0.45);
+}
+/* Bottom-sheet grabber (phones only) */
+.sheet-grabber {
+    display: none;
+}
+@media (max-width: 767px) {
+    .sheet-grabber {
+        display: block;
+        width: 36px;
+        height: 4px;
+        border-radius: 999px;
+        margin: 8px auto 0;
+        background: #cbd5e1;
+        flex-shrink: 0;
+    }
+    html.dark .sheet-grabber {
+        background: #475569;
+    }
+}
+@media (pointer: coarse) {
+    .tap-44 {
+        min-height: 44px;
+        min-width: 44px;
+    }
+}
+input::placeholder {
+    color: #5b6b82;
+    opacity: 1;
+} /* 4.9:1 on slate-100 */
+html.dark input::placeholder {
+    color: #94a3b8;
+}
+/* Slim themed scrollbar, used only by the add/edit habit modal */
+.habit-date-input {
+    -webkit-appearance: none;
+    appearance: none;
+    text-align: right;
+}
+.habit-date-input::-webkit-date-and-time-value {
+    text-align: right;
+    min-height: 1.4em;
+}
+.themed-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.5) transparent;
+}
+.themed-scroll:hover {
+    scrollbar-color: rgba(129, 140, 248, 0.8) transparent;
+}
+html.dark .themed-scroll {
+    scrollbar-color: rgba(100, 116, 139, 0.55) transparent;
+}
+html.dark .themed-scroll:hover {
+    scrollbar-color: rgba(129, 140, 248, 0.75) transparent;
+}
+@supports not (scrollbar-color: auto) {
+    .themed-scroll::-webkit-scrollbar {
+        width: 6px;
+    }
+    .themed-scroll::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    .themed-scroll::-webkit-scrollbar-thumb {
+        background: rgba(148, 163, 184, 0.5);
+        border-radius: 999px;
+    }
+    .themed-scroll::-webkit-scrollbar-thumb:hover {
+        background: rgba(129, 140, 248, 0.8);
+    }
+}
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+.scroll-fade-x.is-overflowing {
+    -webkit-mask-image: linear-gradient(to left, transparent 0, #000 36px);
+    mask-image: linear-gradient(to left, transparent 0, #000 36px);
+}
+.no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}

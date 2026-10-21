@@ -1,0 +1,11 @@
+node_modules/
+dist/
+dist-single/
+coverage/
+test-results/
+playwright-report/
+package-lock.json
+# The reference, never reformatted
+legacy/
+# Markup must stay byte-identical to the original <body> (whitespace between inline elements renders)
+index.html

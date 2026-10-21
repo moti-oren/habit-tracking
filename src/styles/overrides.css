@@ -1,0 +1,17 @@
+/* These two rules must stay after reduced-motion.css: in the original they came after the
+   media query, and the unconditional .bar-fill transition wins over the reduced-motion one
+   (kept as-is, see REFACTOR_NOTES.md). */
+.bar-fill {
+    transition:
+        height 0.45s cubic-bezier(0.22, 1, 0.36, 1),
+        background-color 0.3s ease;
+}
+.habit-drag-card {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+body.is-dragging-habit,
+body.is-dragging-habit * {
+    cursor: grabbing !important;
+}

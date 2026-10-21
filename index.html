@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>מעקב הרגלים — לוח בקרה יומי ושבועי</title>
+    <!-- Set the theme before anything paints. Keep this inline and keep the key equal to
+         PREFS_STORAGE_KEY in src/config/storage-keys.js. -->
+    <script>
+        // Set the theme before anything paints, so the page never flashes the wrong colours.
+        // A theme the user picked wins; otherwise follow the device setting.
+        (function () {
+            var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            try {
+                var prefs = JSON.parse(localStorage.getItem('habit_tracker_prefs_he_v2') || 'null');
+                if (prefs && typeof prefs.isDarkMode === 'boolean') dark = prefs.isDarkMode;
+            } catch (e) {}
+            if (dark) document.documentElement.classList.add('dark');
+        })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- One family, three weights: 400 body · 600 labels · 700 headings and numbers -->
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <!-- Critical CSS: the first-load skeleton has to look right before the stylesheet arrives. -->
+    <style>
+        /* First-load skeleton (plain CSS, removed after the first render) */
+        #appSkeleton { position: fixed; inset: 0; z-index: 100; background: #f1f5f9; transition: opacity var(--dur-short) var(--ease-out); }
+        html.dark #appSkeleton { background: #020617; }
+        #appSkeleton.is-done { opacity: 0; pointer-events: none; }
+        #appSkeleton .sk-wrap { max-width: 80rem; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+        #appSkeleton .sk-row { display: flex; gap: 12px; align-items: center; }
+        #appSkeleton .sk { border-radius: 16px; background: linear-gradient(90deg, #e2e8f0 0%, #f8fafc 50%, #e2e8f0 100%); background-size: 200% 100%; animation: sk-shimmer 1.2s linear infinite; }
+        html.dark #appSkeleton .sk { background-image: linear-gradient(90deg, #0f172a 0%, #1e293b 50%, #0f172a 100%); }
+        #appSkeleton .sk-logo { width: 44px; height: 44px; border-radius: 12px; }
+        #appSkeleton .sk-title { width: 160px; height: 28px; border-radius: 8px; }
+        #appSkeleton .sk-nav { height: 150px; }
+        #appSkeleton .sk-line { width: 40%; height: 24px; border-radius: 8px; }
+        #appSkeleton .sk-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+        #appSkeleton .sk-card { height: 150px; }
+        @keyframes sk-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+        @media (prefers-reduced-motion: reduce) {
+            #appSkeleton .sk { animation: none; }
+        }
+    </style>
+    <link rel="stylesheet" href="/src/styles/main.css">
+    <script type="module" src="/src/main.js"></script>
+</head>
+<body class="bg-slate-100 dark:bg-slate-950 text-slate-900 dark:text-slate-100 min-h-screen transition-colors duration-300">
+    <a href="#mainContent" class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:right-3 focus:z-[110] focus:px-4 focus:py-2.5 focus:rounded-xl focus:bg-indigo-600 focus:text-white focus:text-sm focus:font-bold focus:shadow-lg">דילוג לתוכן הראשי</a>
+
+    <!-- App-shell skeleton: plain CSS so it shows before Tailwind has styled the page; removed after the first render -->
+    <div id="appSkeleton" aria-hidden="true">
+        <div class="sk-wrap">
+            <div class="sk-row"><div class="sk sk-logo"></div><div class="sk sk-title"></div></div>
+            <div class="sk sk-nav"></div>
+            <div class="sk sk-line"></div>
+            <div class="sk-cards"><div class="sk sk-card"></div><div class="sk sk-card"></div><div class="sk sk-card"></div></div>
+        </div>
+    </div>
+
+    <div class="w-full max-w-7xl mx-auto min-h-screen flex flex-col pb-[calc(7rem+env(safe-area-inset-bottom))] lg:pb-12">
+        
+        <!-- Top Sticky Header with Main Navigation Menu -->
+        <header class="sticky top-0 z-30 backdrop-blur-xl bg-slate-100/90 dark:bg-slate-950/90 px-4 sm:px-6 lg:px-8 py-3.5 transition-colors">
+            <span aria-hidden="true" class="pointer-events-none absolute bottom-0 inset-x-4 sm:inset-x-6 lg:inset-x-8 border-t border-slate-200 dark:border-slate-800"></span>
+            <div class="flex flex-wrap items-center justify-between gap-4">
+                
+                <!-- Right Side: Brand Title & Greeting -->
+                <div class="flex items-center gap-3.5">
+                    <div class="w-11 h-11 md:w-12 md:h-12 rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-500/30 flex items-center justify-center shrink-0">
+                        <svg class="w-6 h-6" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                    </div>
+                    <div>
+                        <span class="block text-xs font-semibold text-indigo-600 dark:text-indigo-400" id="greetingLabel">&nbsp;</span>
+                        <h1 class="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
+                            מעקב הרגלים
+                        </h1>
+                    </div>
+                </div>
+
+                <!-- Center: Main 3-Section Navigation Menu (Desktop & Tablet) -->
+                <nav aria-label="תפריט ניווט ראשי" data-seg="tint" class="seg hidden lg:flex items-center gap-1.5 bg-white dark:bg-slate-900 p-1.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm">
+                    <button id="navTab_tracker" data-action="switchSection" data-arg="tracker" class="h-10 px-4 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 text-indigo-700 dark:text-indigo-300">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        <span>מעקב</span>
+                    </button>
+                    <button id="navTab_analytics" data-action="switchSection" data-arg="analytics" class="h-10 px-4 rounded-xl text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                        <span>מגמות</span>
+                    </button>
+                    <button id="navTab_manage" data-action="switchSection" data-arg="manage" class="h-10 px-4 rounded-xl text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
+                        <span>ניהול</span>
+                    </button>
+                </nav>
+
+                <!-- Left Side: Utility Controls -->
+                <div class="flex items-center gap-2">
+                    <!-- Sound Toggle -->
+                    <button id="soundToggleBtn" data-action="toggleSound" title="הפעלה או השתקת צלילים" aria-label="הפעלה או השתקת צלילים" class="tap-44 w-10 h-10 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition shadow-sm">
+                        <span id="soundIconContainer" class="text-indigo-600 dark:text-indigo-400">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
+                        </span>
+                    </button>
+
+                    <!-- Theme Toggle -->
+                    <button id="themeToggleBtn" data-action="toggleTheme" title="החלפת ערכת נושא" aria-label="החלפת ערכת נושא" class="tap-44 w-10 h-10 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition shadow-sm">
+                        <span id="themeIconContainer" class="text-amber-400">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                        </span>
+                    </button>
+                </div>
+            </div>
+
+        </header>
+
+        <main id="mainContent" tabindex="-1" class="px-4 sm:px-6 lg:px-8 pt-4 md:pt-7 flex-1 focus:outline-none">
+            
+            <!-- ========================================================= -->
+            <!-- SECTION 1: מעקב התקדמות יומי ושבועי (TRACKER VIEW)       -->
+            <!-- ========================================================= -->
+            <div id="section_tracker" class="space-y-6 view-fade">
+                
+                <!-- Date navigator: one component for week, day and calendar -->
+                <section id="dateNavigator" aria-label="בחירת יום לדיווח" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-3 sm:p-4 space-y-3">
+                    <div class="flex items-center justify-between gap-2">
+                        <button type="button" data-action="openCalendar" aria-haspopup="dialog" title="פתיחת לוח השנה המלא" class="tap-44 h-10 min-w-0 px-2 -mr-1 rounded-xl text-sm sm:text-base font-bold text-slate-900 dark:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-2">
+                            <svg class="w-5 h-5 shrink-0 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                            <span id="weekRangeLabel" class="truncate">השבוע הנוכחי</span>
+                            <svg class="w-4 h-4 shrink-0 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                        </button>
+                        <div class="flex items-center gap-1 shrink-0">
+                            <button type="button" data-action="shiftWeek" data-arg="-1" aria-label="שבוע קודם" title="שבוע קודם" class="nudge-prev tap-44 w-10 h-10 rounded-xl flex items-center justify-center text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg></button>
+                            <button type="button" id="nextWeekBtn" data-action="shiftWeek" data-arg="1" aria-label="שבוע הבא" title="שבוע הבא" class="nudge-next tap-44 w-10 h-10 rounded-xl flex items-center justify-center text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition disabled:opacity-30 disabled:pointer-events-none"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg></button>
+                        </div>
+                    </div>
+
+                    <div id="daySelectorStrip" class="grid grid-cols-7 gap-0.5 min-[360px]:gap-1 sm:gap-2">
+                        <!-- Populated via JS -->
+                    </div>
+
+                    <!-- Shown only when reporting on a day other than today; opens by height -->
+                    <div id="selectedDayBannerWrap" class="reveal !mt-0" role="status" inert>
+                        <div>
+                            <div class="pt-3">
+                                <div id="selectedDayBannerBox" class="flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-amber-800 dark:text-amber-200">
+                                <span class="flex items-center gap-2 min-w-0">
+                                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l2.5 2.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                    <span id="selectedDayBannerText" class="text-sm font-semibold truncate"></span>
+                                </span>
+                                <button type="button" id="backToTodayBannerBtn" data-action="jumpToToday" class="tap-44 shrink-0 h-9 px-3 rounded-lg bg-amber-700 hover:bg-amber-800 text-white text-sm font-semibold transition"><span class="sm:hidden">להיום</span><span class="hidden sm:inline">חזרה להיום</span></button>
+                            </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Controls: title, view switcher, overflow menu, category pills (no card) -->
+                <section class="space-y-3">
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <div class="flex items-baseline gap-2 min-w-0">
+                            <h2 class="text-base md:text-lg font-bold text-slate-900 dark:text-white">סימון הרגלים</h2>
+                            <span id="trackerDayProgress" class="text-sm font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap"></span>
+                        </div>
+
+                        <div class="flex items-center gap-1.5">
+                            <!-- Segmented View Switcher: רשימה יומית vs טבלה שבועית -->
+                            <div data-seg="raised" class="seg inline-flex p-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold">
+                                <button id="viewModeFocusBtn" data-action="setViewMode" data-arg="focus" class="tap-44 h-9 px-3.5 rounded-lg transition-all bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm flex items-center gap-1.5">
+                                    <svg class="w-4 h-4 hidden min-[380px]:block" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                    <span>רשימה יומית</span>
+                                </button>
+                                <button id="viewModeGridBtn" data-action="setViewMode" data-arg="grid" class="tap-44 h-9 px-3.5 rounded-lg transition-all text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
+                                    <svg class="w-4 h-4 hidden min-[380px]:block" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                                    <span>טבלה שבועית</span>
+                                </button>
+                            </div>
+
+                            <!-- Overflow menu: mark all / clear -->
+                            <div class="relative">
+                                <button type="button" data-action="toggleMenu" data-arg="trackerActionsMenu" aria-haspopup="menu" aria-expanded="false" aria-label="פעולות נוספות" title="פעולות נוספות" class="tap-44 w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition">
+                                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
+                                </button>
+                                <div id="trackerActionsMenu" data-menu-panel role="menu" class="hidden absolute top-full mt-1.5 left-0 z-30 min-w-[12rem] p-1 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg">
+                                    <button type="button" id="markAllBtn" role="menuitem" data-action="markAll" class="w-full text-right px-3 py-2 rounded-lg text-sm font-normal text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent">סמן הכל להיום</button>
+                                    <button type="button" id="clearAllBtn" role="menuitem" data-action="clearAll" class="w-full text-right px-3 py-2 rounded-lg text-sm font-normal text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent">נקה סימונים</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="scroll-fade-x flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
+                        <div id="categoryFilterBar" class="flex items-center gap-1.5">
+                            <!-- Populated via JS -->
+                        </div>
+                    </div>
+
+
+                    <!-- Active Filter Indicator Line -->
+                    <div id="trackerActiveFilterIndicator" class="hidden text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                        <!-- Populated via JS -->
+                    </div>
+                </section>
+
+                <!-- Habits Check-off Container (3 columns on wide desktop for clean ergonomics) -->
+                <section>
+                    <div id="habitsListContainer">
+                        <!-- Injected dynamically via JS -->
+                    </div>
+                </section>
+            </div>
+
+            <!-- ========================================================= -->
+            <!-- SECTION 2: דיאגרמות וסטטיסטיקה (ANALYTICS VIEW)          -->
+            <!-- ========================================================= -->
+            <div id="section_analytics" class="hidden space-y-6 view-fade">
+
+                <!-- Filters: no card, one row — period (presets), prev/next, and what to show; custom dates tuck underneath -->
+                <div class="space-y-3">
+                    <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+                        <div class="scroll-fade-x overflow-x-auto no-scrollbar max-w-full -mx-1 px-1">
+                            <div id="analyticsRangePresets" role="group" aria-label="טווח תאריכים" data-seg="raised" class="seg inline-flex p-1 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-semibold whitespace-nowrap"></div>
+                        </div>
+                        <div class="w-full sm:w-auto flex flex-wrap items-center justify-between sm:justify-start gap-x-3 gap-y-3">
+                            <!-- Prev / current range / next: plain text with quiet arrows -->
+                            <div class="w-full sm:w-auto flex items-center justify-between">
+                                <button type="button" data-action="shiftRange" data-arg="-1" aria-label="טווח קודם" title="טווח קודם" class="nudge-prev tap-44 w-10 h-10 shrink-0 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                                </button>
+                                <span id="analyticsRangeLabel" aria-live="polite" class="flex-1 px-1 text-sm font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap sm:min-w-[8.5rem] text-center"></span>
+                                <button type="button" id="analyticsNextRangeBtn" data-action="shiftRange" data-arg="1" aria-label="טווח הבא" title="טווח הבא" class="nudge-next tap-44 w-10 h-10 shrink-0 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+                                </button>
+                            </div>
+                            <label for="analyticsFilterSelect" class="sr-only">הצגה לפי</label>
+                            <select id="analyticsFilterSelect" data-change="analyticsFilter" class="tap-44 w-full sm:w-auto sm:min-w-[11rem] max-w-full h-10 px-3 rounded-xl bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-600 border border-slate-200/80 dark:border-slate-700/70 transition text-sm font-semibold text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"></select>
+                        </div>
+                    </div>
+
+                    <!-- Custom range: two quiet buttons with an arrow; both open the same calendar -->
+                    <div id="analyticsCustomRange" class="hidden fade-in-quick">
+                        <div class="flex items-center gap-2">
+                            <label for="analyticsRangeStart" class="sr-only">מתאריך</label>
+                            <input id="analyticsRangeStart" type="date" data-compact="1" data-change="customRange" class="habit-date-input flex-1 sm:flex-none sm:min-w-[9.5rem] h-10 px-3 rounded-xl bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-600 border border-slate-200/80 dark:border-slate-700/70 transition text-sm font-semibold text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <svg class="w-4 h-4 shrink-0 text-slate-400 dark:text-slate-500" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+                            <label for="analyticsRangeEnd" class="sr-only">עד תאריך</label>
+                            <input id="analyticsRangeEnd" type="date" data-compact="1" data-change="customRange" class="habit-date-input flex-1 sm:flex-none sm:min-w-[9.5rem] h-10 px-3 rounded-xl bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-600 border border-slate-200/80 dark:border-slate-700/70 transition text-sm font-semibold text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Empty state: nothing to measure yet -->
+                <div id="analyticsEmptyState" class="hidden bg-white dark:bg-slate-900 rounded-2xl p-8 sm:p-10 text-center border border-dashed border-slate-300 dark:border-slate-700">
+                    <div class="w-12 h-12 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto mb-3">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 19h16M7 15v-3m5 3V8m5 7v-5"/></svg>
+                    </div>
+                    <h2 class="text-base font-bold text-slate-900 dark:text-white">עוד אין מה למדוד</h2>
+                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1 mb-4">הוסיפו הרגל וסמנו אותו כמה ימים. הגרפים והדירוג יופיעו כאן.</p>
+                    <button type="button" data-action="newHabit" class="h-11 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold transition">+ הוספת הרגל</button>
+                </div>
+
+                <!-- Top Summary KPI Row (4 Cards) -->
+                <div id="analyticsKpiRow" class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm min-w-0 flex flex-col">
+                        <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">ציון עקביות</span>
+                        <div class="mt-2 h-9 flex items-baseline gap-1.5">
+                            <span id="weeklyRateValue" class="text-3xl font-bold text-slate-900 dark:text-white">0%</span>
+                        </div>
+                        <p id="weeklyTotalChecks" class="text-xs text-slate-500 dark:text-slate-400 mt-1">0 מתוך 0 יעדים</p>
+                        <p id="rateCompareText" class="hidden text-xs font-semibold mt-1"></p>
+                    </div>
+
+                    <div class="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm min-w-0 flex flex-col">
+                        <span id="perfectDaysTileTitle" class="text-xs font-semibold text-slate-500 dark:text-slate-400">ימים מושלמים</span>
+                        <div class="mt-2 h-9 flex items-baseline gap-1.5">
+                            <span id="perfectDaysTileValue" class="text-3xl font-bold text-slate-900 dark:text-white">0/0</span>
+                        </div>
+                        <p id="perfectDaysTileSub" class="text-xs text-slate-500 dark:text-slate-400 mt-1">מתוך הימים עם יעדים</p>
+                    </div>
+
+                    <div class="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm min-w-0 flex flex-col">
+                        <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">רצף נוכחי</span>
+                        <div class="mt-2 h-9 flex items-baseline gap-1.5">
+                            <span id="bestStreakValue" class="text-3xl font-bold text-slate-900 dark:text-white">0</span>
+                            <span id="bestStreakUnitLabel" class="text-xs font-semibold text-slate-500 dark:text-slate-400">ימים</span>
+                        </div>
+                        <p id="bestStreakHabitName" class="text-xs text-slate-500 dark:text-slate-400 mt-1 truncate">-</p>
+                        <p id="allTimeStreakText" class="text-xs text-slate-500 dark:text-slate-400 mt-1 truncate"></p>
+                    </div>
+
+                    <div class="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm min-w-0 flex flex-col">
+                        <span id="attentionTileTitle" class="text-xs font-semibold text-slate-500 dark:text-slate-400">צריך תשומת לב</span>
+                        <div id="attentionHabitBox" class="min-w-0"></div>
+                    </div>
+                </div>
+
+                <!-- Main Analytics Grid: Large Spacious Weekly Bar Chart (7 cols) + Leaderboard (5 cols) -->
+                <div id="analyticsMainGrid" class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                    
+                    <!-- Spacious Weekly Bar Chart Card -->
+                    <div id="analyticsChartCard" class="lg:col-span-7 bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-5">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                                <h2 class="text-lg font-bold text-slate-900 dark:text-white">עקביות יומית</h2>
+                            </div>
+                            <!-- Range average: shown here instead of a floating label that could cover bars -->
+                            <span id="chartAvgSummary" class="hidden items-center gap-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
+                                <span class="w-4 border-t-2 border-dashed border-slate-400 dark:border-slate-500" aria-hidden="true"></span>
+                                <span id="chartAvgSummaryText"></span>
+                            </span>
+                        </div>
+
+                        <!-- Bar chart (short ranges) -->
+                        <div id="barChartWrap" class="relative pt-6 pb-2 px-1 sm:px-4">
+                            <!-- Dashed Average Line -->
+                            <div id="chartAvgLine" class="absolute inset-x-1 sm:inset-x-4 pointer-events-none z-30 transition-all duration-500" style="bottom: 52px;" aria-hidden="true">
+                                <div class="w-full border-t-2 border-dashed border-slate-400 dark:border-slate-500"></div>
+                            </div>
+
+                            <div id="weeklyBarChart" class="grid gap-3 sm:gap-4 items-end h-56 select-none relative z-10" style="grid-template-columns: repeat(7, minmax(0, 1fr));">
+                                <!-- Populated via JS -->
+                            </div>
+                        </div>
+
+                        <!-- Line chart (long ranges) -->
+                        <div id="lineChartWrap" class="hidden relative w-full"></div>
+
+                        <!-- Single-habit calendar grid (long ranges) -->
+                        <div id="habitGridWrap" class="hidden w-full overflow-x-auto"></div>
+
+                        <p id="weekdayInsight" class="hidden text-sm text-slate-600 dark:text-slate-300"></p>
+
+                        <!-- Legend -->
+                        <div class="pt-4 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400">
+                            <div id="chartLegend" class="flex flex-wrap items-center gap-x-4 gap-y-2"></div>
+                        </div>
+                    </div>
+
+                    <!-- Habit Streak & Target Leaderboard Card -->
+                    <div id="analyticsLeaderboardCard" class="lg:col-span-5 bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800 shadow-sm space-y-4">
+                        <div class="flex items-center justify-between gap-2">
+                            <div>
+                                <h3 class="text-lg font-bold text-slate-900 dark:text-white">דירוג הרגלים</h3>
+                            </div>
+                        </div>
+
+                        <div id="habitLeaderboardList" class="space-y-3">
+                            <!-- Populated via JS -->
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- ========================================================= -->
+            <!-- SECTION 3: ניהול הרגלים (MANAGE HABITS VIEW)             -->
+            <!-- ========================================================= -->
+            <div id="section_manage" class="hidden space-y-6 view-fade">
+                
+                <!-- Compact Manage Header: title + count, primary add action -->
+                <div class="flex items-center justify-between gap-3">
+                    <div class="min-w-0">
+                        <h2 class="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">ההרגלים שלי</h2>
+                        <span id="manageHabitsSubtitle" class="text-xs font-semibold text-slate-500 dark:text-slate-400">סה״כ 0 הרגלים</span>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5"><span class="hidden sm:inline">גררו הרגל כדי להעביר אותו לקטגוריה אחרת</span><span class="sm:hidden">לחיצה ארוכה וגרירה להעברת קטגוריה</span></p>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <div class="relative">
+                            <button type="button" data-action="toggleMenu" data-arg="manageHeaderMenu" aria-haspopup="menu" aria-expanded="false" aria-label="אפשרויות נוספות" title="אפשרויות נוספות" class="w-11 h-11 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition">
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
+                            </button>
+                            <div id="manageHeaderMenu" data-menu-panel role="menu" class="hidden absolute top-full mt-1.5 left-0 z-30 min-w-[13rem] p-1 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg">
+                                <button type="button" role="menuitem" data-action="resetData" class="w-full flex items-center gap-2 text-right px-3 py-2 rounded-lg text-sm font-normal text-rose-600 dark:text-rose-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition">איפוס לנתוני דוגמה</button>
+                            </div>
+                        </div>
+                        <button type="button" id="manageSelectToggleBtn" data-action="toggleSelectMode" aria-pressed="false" class="h-11 px-3 sm:px-4 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 transition">בחירה</button>
+                        <button data-action="newHabit" aria-label="הרגל חדש" title="הרגל חדש" class="h-11 w-11 sm:w-auto sm:px-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm flex items-center justify-center gap-1.5 transition">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+                            <span class="hidden sm:inline">הרגל חדש</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Category Filter for Management View -->
+                <div class="-mt-2">
+                    <div class="scroll-fade-x flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
+                        <div id="manageCategoryFilterBar" class="flex items-center gap-1.5">
+                            <!-- Populated via JS -->
+                        </div>
+                        <button data-action="openCategories" title="ניהול קטגוריות" class="tap-44 h-10 px-3 rounded-xl text-xs font-semibold whitespace-nowrap bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 border border-dashed border-indigo-300 dark:border-indigo-800 transition flex items-center gap-1 shrink-0">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
+                            <span>ניהול קטגוריות</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Management Cards Grid -->
+                <div id="manageHabitsGrid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- Populated via JS -->
+                </div>
+
+                <!-- Archived Habits (collapsible) -->
+                <div id="manageArchiveSection" class="hidden"></div>
+
+
+            </div>
+
+        </main>
+
+                <!-- Bulk actions bar (selection mode) -->
+                <div id="manageBulkBar" class="hidden fixed inset-x-0 z-40 bottom-[calc(5rem+env(safe-area-inset-bottom))] lg:bottom-6 px-4 pointer-events-none">
+                    <div class="pointer-events-auto max-w-xl mx-auto flex items-center gap-2 p-2 pr-4 rounded-2xl bg-slate-900 dark:bg-slate-800 text-white shadow-2xl">
+                        <div class="flex-1 min-w-0 flex items-center gap-3">
+                            <span id="manageBulkCount" role="status" aria-live="polite" class="text-sm font-bold whitespace-nowrap">בחרו הרגלים</span>
+                            <button type="button" id="manageBulkSelectAllBtn" data-action="selectAllHabits" class="tap-44 h-10 px-1.5 rounded-lg text-xs font-semibold text-indigo-300 hover:text-white whitespace-nowrap">בחירת הכל</button>
+                        </div>
+                        <button type="button" id="manageBulkArchiveBtn" data-action="bulkArchive" class="h-10 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-sm font-bold transition disabled:opacity-40 disabled:cursor-not-allowed">ארכיון</button>
+                        <button type="button" id="manageBulkDeleteBtn" data-action="bulkDelete" class="h-10 px-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-sm font-bold transition disabled:opacity-40 disabled:cursor-not-allowed">מחיקה</button>
+                        <button type="button" data-action="exitSelectMode" aria-label="סיום בחירה" title="סיום בחירה" class="w-10 h-10 rounded-xl hover:bg-white/10 flex items-center justify-center text-slate-300 hover:text-white transition"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
+                    </div>
+                </div>
+        <!-- Drag & drop: category drop tray + floating ghost -->
+        <div id="habitDropTray" class="hidden fixed inset-x-0 top-3 z-[60] px-4 pointer-events-none">
+            <div class="pointer-events-auto max-w-2xl mx-auto p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl">
+                <p id="habitDropTrayTitle" class="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">שחררו על קטגוריה</p>
+                <div id="habitDropTrayList" class="flex flex-wrap gap-2"></div>
+            </div>
+        </div>
+        <div id="habitDragGhost" class="hidden fixed z-[70] pointer-events-none px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm font-bold shadow-2xl whitespace-nowrap" style="left:0;top:0"></div>
+
+        <!-- Mobile Bottom Navigation Bar (3 Tabs) -->
+        <nav aria-label="ניווט תחתון למובייל" class="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-lg border-t border-slate-200 dark:border-slate-800 px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
+            <div data-seg="tint" class="seg grid grid-cols-3 gap-2 max-w-md mx-auto">
+                <button id="mobileNav_tracker" data-action="switchSection" data-arg="tracker" class="flex flex-col items-center justify-center py-2 rounded-xl text-xs font-semibold text-indigo-700 dark:text-indigo-300 transition">
+                    <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    <span>מעקב</span>
+                </button>
+                <button id="mobileNav_analytics" data-action="switchSection" data-arg="analytics" class="flex flex-col items-center justify-center py-2 rounded-xl text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition">
+                    <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                    <span>מגמות</span>
+                </button>
+                <button id="mobileNav_manage" data-action="switchSection" data-arg="manage" class="flex flex-col items-center justify-center py-2 rounded-xl text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition">
+                    <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
+                    <span>ניהול</span>
+                </button>
+            </div>
+        </nav>
+    </div>
+
+    <!-- Add / Edit Habit Modal -->
+    <div id="habitModalBackdrop" data-action="backdropClose" class="modal-backdrop fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm hidden items-end md:items-center justify-center p-0 md:p-4 transition-opacity">
+        <div role="dialog" aria-modal="true" aria-labelledby="modalTitle"  class="modal-panel modal-sheet w-full max-w-lg bg-white dark:bg-slate-900 rounded-t-2xl md:rounded-2xl border-t md:border border-slate-200 dark:border-slate-800 pb-[env(safe-area-inset-bottom)] md:pb-0 shadow-2xl max-h-[92dvh] flex flex-col overflow-hidden">
+            <span class="sheet-grabber" aria-hidden="true"></span>
+            <!-- Fixed header: stays in place while the form scrolls -->
+            <div class="shrink-0 flex items-center justify-between px-5 md:px-6 pt-3 md:pt-5 pb-3 border-b border-slate-100 dark:border-slate-800">
+                <h3 id="modalTitle" class="text-lg font-bold text-slate-900 dark:text-white">הרגל חדש</h3>
+                <button type="button" data-action="closeHabitModal" aria-label="סגירה" class="tap-44 w-10 h-10 shrink-0 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+
+          <div class="themed-scroll flex-1 overflow-y-auto overscroll-contain min-h-0 px-5 md:px-6">
+            <form id="habitForm" data-submit="saveHabit" data-keydown="habitFormEnter" data-input="habitFormChanged" data-change="habitFormChanged" class="pt-4 pb-5 space-y-6">
+                <input type="hidden" id="habitIdInput">
+
+                <!-- 1. Identity: preview (icon + colour) next to the name -->
+                <section aria-label="פרטי ההרגל">
+                    <label for="habitNameInput" class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2">שם ההרגל</label>
+                    <div class="flex items-center gap-3">
+                        <button type="button" id="habitAppearanceBtn" data-action="toggleHabitSection" data-arg="appearance" aria-expanded="false" aria-controls="habitAppearancePanel" class="relative shrink-0 rounded-xl transition hover:scale-[1.03] active:scale-95 motion-reduce:transform-none">
+                            <span id="habitPreviewIcon" class="w-12 h-12 rounded-xl flex items-center justify-center text-2xl border-2" aria-hidden="true"></span>
+                            <span class="absolute -bottom-1 -left-1 w-5 h-5 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 shadow-sm flex items-center justify-center text-slate-600 dark:text-slate-300" aria-hidden="true">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536M4 20h4L18.5 9.5a2.5 2.5 0 00-3.536-3.536L4 16v4z"/></svg>
+                            </span>
+                        </button>
+                        <input id="habitNameInput" type="text" required maxlength="45" placeholder="למשל: אימון כוח, קריאה" class="flex-1 min-w-0 h-12 px-3.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-base font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+
+                    <!-- Icon + colour pickers: open from the preview -->
+                    <div id="habitAppearancePanel" class="hidden mt-3 p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/70 space-y-4">
+                        <div>
+                            <p class="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2">אייקון</p>
+                            <div id="iconPickerGrid" role="group" aria-label="בחירת אייקון" class="grid grid-cols-6 gap-2">
+                                <!-- Populated via JS -->
+                            </div>
+                            <div id="customIconPanel" class="hidden mt-2.5 p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700">
+                                <label for="customIconInput" class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">אייקון משלכם: הקלידו או הדביקו אימוג'י</label>
+                                <div class="flex items-center gap-2">
+                                    <input id="customIconInput" type="text" inputmode="text" autocomplete="off" placeholder="😀" aria-label="אימוג'י מותאם אישית" data-input="customIcon" class="w-16 h-11 text-center text-2xl rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                    <p class="flex-1 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">או בחרו מהרשימה. במחשב: <span class="font-bold" dir="ltr">Win + .</span> / <span class="font-bold" dir="ltr">Ctrl + Cmd + Space</span></p>
+                                </div>
+                                <div id="moreIconsGrid" class="grid grid-cols-8 gap-1.5 mt-2.5 max-h-36 overflow-y-auto overscroll-contain"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <p class="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2">צבע</p>
+                            <div id="colorPickerGrid" role="group" aria-label="צבע ערכה" class="flex items-center justify-between">
+                                <!-- Populated via JS -->
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 2. When: goal type + start date -->
+                <section aria-labelledby="habitWhenHeading" class="space-y-3">
+                    <h4 id="habitWhenHeading" class="text-sm font-bold text-slate-900 dark:text-white">מתי?</h4>
+                    <div data-seg="raised-strong" class="seg grid grid-cols-3 gap-1 p-1 rounded-xl bg-slate-200/70 dark:bg-slate-800">
+                        <button type="button" id="goalTypeBtn_daily" data-action="setGoalType" data-arg="daily" class="min-h-[44px] flex items-center justify-center text-center whitespace-nowrap py-2 px-1.5 rounded-lg text-xs font-semibold transition-all">
+                            כל יום
+                        </button>
+                        <button type="button" id="goalTypeBtn_flexible" data-action="setGoalType" data-arg="flexible" class="min-h-[44px] flex items-center justify-center text-center whitespace-nowrap py-2 px-1.5 rounded-lg text-xs font-semibold transition-all">
+                            ימים בשבוע
+                        </button>
+                        <button type="button" id="goalTypeBtn_fixed_days" data-action="setGoalType" data-arg="fixed_days" class="min-h-[44px] flex items-center justify-center text-center whitespace-nowrap py-2 px-1.5 rounded-lg text-xs font-semibold transition-all">
+                            ימים קבועים
+                        </button>
+                    </div>
+
+                    <!-- Option 1: every day -->
+                    <p id="goalPanel_daily" class="text-xs text-slate-500 dark:text-slate-400">בכל 7 ימי השבוע.</p>
+
+                    <!-- Option 2: a number of days, any days -->
+                    <div id="goalPanel_flexible" class="hidden flex items-center justify-between gap-3">
+                        <label for="habitGoalInput" class="text-xs font-semibold text-slate-600 dark:text-slate-400">כמה ימים בשבוע? <span class="block font-normal text-slate-500 dark:text-slate-400">בכל יום שתבחרו</span></label>
+                        <select id="habitGoalInput" class="w-40 shrink-0 h-11 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-base sm:text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <option value="6">6 ימים</option>
+                            <option value="5">5 ימים</option>
+                            <option value="4">4 ימים</option>
+                            <option value="3">3 ימים</option>
+                            <option value="2">פעמיים</option>
+                            <option value="1">פעם אחת</option>
+                        </select>
+                    </div>
+
+                    <!-- Option 3: specific weekdays -->
+                    <div id="goalPanel_fixed_days" class="hidden space-y-2">
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="text-xs font-semibold text-slate-600 dark:text-slate-400">באילו ימים?</span>
+                            <span id="fixedDaysCountBadge" class="shrink-0 text-xs font-semibold text-indigo-600 dark:text-indigo-400">3 ימים נבחרו</span>
+                        </div>
+                        <div id="fixedDaysPickerGrid" role="group" aria-label="הימים הקבועים בשבוע" class="grid grid-cols-7 gap-1.5">
+                            <!-- Populated via JS: א׳-ש׳ -->
+                        </div>
+                    </div>
+
+                    <!-- Start date -->
+                    <div class="flex items-center justify-between gap-3 pt-1">
+                        <label for="habitStartDateInput" class="shrink-0 text-xs font-semibold text-slate-600 dark:text-slate-400">מתאריך</label>
+                        <input id="habitStartDateInput" type="date" class="habit-date-input block flex-1 max-w-[16rem] min-w-0 h-11 px-3 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-base sm:text-sm font-normal focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:[color-scheme:dark]">
+                    </div>
+                    <p id="habitStartDateHint" class="hidden text-xs text-slate-500 dark:text-slate-400"></p>
+                </section>
+
+                <!-- 3. More options: collapsed, each row shows a one-line summary -->
+                <section aria-labelledby="habitMoreHeading" class="space-y-2">
+                    <h4 id="habitMoreHeading" class="text-sm font-bold text-slate-900 dark:text-white mb-3">אפשרויות נוספות</h4>
+
+                    <!-- Time & frequency -->
+                    <div class="rounded-xl border border-slate-200/80 dark:border-slate-700/70 bg-slate-50 dark:bg-slate-800/40">
+                        <button type="button" id="habitTimeToggle" data-action="toggleHabitSection" data-arg="time" aria-expanded="false" aria-controls="habitTimePanel" class="w-full min-h-[56px] flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-right hover:bg-slate-100/80 dark:hover:bg-slate-800/70 transition">
+                            <span class="w-8 h-8 shrink-0 rounded-lg bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-400" aria-hidden="true">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 2"/></svg>
+                            </span>
+                            <span class="flex-1 min-w-0">
+                                <span class="block text-sm font-semibold text-slate-800 dark:text-slate-100">שעה ותדירות</span>
+                                <span id="habitTimeSummary" class="block text-xs text-slate-500 dark:text-slate-400 truncate">בלי שעה</span>
+                            </span>
+                            <svg data-chevron class="w-4 h-4 shrink-0 text-slate-400 transition-transform duration-200 motion-reduce:transition-none" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                        </button>
+                        <div id="habitTimePanel" class="hidden px-3.5 pb-3.5 pt-1 space-y-3">
+                            <div class="flex items-center justify-between gap-3">
+                                <label for="habitTimesPerDay" class="whitespace-nowrap text-xs font-semibold text-slate-600 dark:text-slate-400">כמה פעמים ביום?</label>
+                                <select id="habitTimesPerDay" data-change="timesPerDay" class="w-28 min-[360px]:w-36 shrink-0 h-11 px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-base sm:text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"><option value="1">פעם אחת</option><option value="2">פעמיים</option><option value="3">3 פעמים</option><option value="4">4 פעמים</option></select>
+                            </div>
+                            <!-- Switch: a different time on each day -->
+                            <label id="habitPerDayToggleWrap" class="flex items-center justify-between gap-3 min-h-[44px] cursor-pointer select-none">
+                                <span class="text-xs font-semibold text-slate-600 dark:text-slate-400">שעה שונה לכל יום</span>
+                                <input type="checkbox" id="habitPerDayToggle" data-change="perDayTimes" class="peer sr-only">
+                                <span aria-hidden="true" class="relative shrink-0 w-10 h-6 rounded-full bg-slate-300 dark:bg-slate-600 peer-checked:bg-indigo-600 transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-indigo-500 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:content-[''] after:absolute after:top-0.5 after:right-0.5 after:w-5 after:h-5 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:after:-translate-x-4"></span>
+                            </label>
+                            <!-- Chips pick which day / which time is being edited; each chip shows its time -->
+                            <div id="timeDayChips" role="group" aria-label="בחירת יום לעריכת השעה" class="hidden grid gap-1.5"></div>
+                            <div id="timeSlotChips" role="group" aria-label="בחירת פעם לעריכת השעה" class="hidden flex gap-1.5"></div>
+                            <p id="timeEditCaption" class="hidden text-xs font-semibold text-indigo-700 dark:text-indigo-300"></p>
+                            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                <div id="habitTimeHourCell" class="min-w-0">
+                                    <label for="habitTimeHour" class="block text-xs text-slate-500 dark:text-slate-400 mb-1">שעה</label>
+                                    <select id="habitTimeHour" data-change="timeEditor" class="w-full h-11 px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-base sm:text-sm font-normal focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-45 disabled:cursor-not-allowed"><option value="">ללא שעה</option><option value="00">00</option><option value="01">01</option><option value="02">02</option><option value="03">03</option><option value="04">04</option><option value="05">05</option><option value="06">06</option><option value="07">07</option><option value="08">08</option><option value="09">09</option><option value="10">10</option><option value="11">11</option><option value="12">12</option><option value="13">13</option><option value="14">14</option><option value="15">15</option><option value="16">16</option><option value="17">17</option><option value="18">18</option><option value="19">19</option><option value="20">20</option><option value="21">21</option><option value="22">22</option><option value="23">23</option></select>
+                                </div>
+                                <div id="habitTimeMinuteCell" class="min-w-0">
+                                    <label for="habitTimeMinute" class="block text-xs text-slate-500 dark:text-slate-400 mb-1">דקות</label>
+                                    <select id="habitTimeMinute" data-change="timeEditor" class="w-full h-11 px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-base sm:text-sm font-normal focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-45 disabled:cursor-not-allowed"><option value="00">00</option><option value="05">05</option><option value="10">10</option><option value="15">15</option><option value="20">20</option><option value="25">25</option><option value="30">30</option><option value="35">35</option><option value="40">40</option><option value="45">45</option><option value="50">50</option><option value="55">55</option></select>
+                                </div>
+                                <div id="habitDurationCell" class="min-w-0 col-span-2 sm:col-span-1">
+                                    <label for="habitDuration" class="block text-xs text-slate-500 dark:text-slate-400 mb-1">משך<span id="habitDurationEach" class="hidden"> (לכל פעם)</span></label>
+                                    <select id="habitDuration" data-change="syncTimeFields" class="w-full h-11 px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-base sm:text-sm font-normal focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-45 disabled:cursor-not-allowed"><option value="0">ללא משך</option><option value="5">5 דקות</option><option value="10">10 דקות</option><option value="15">15 דקות</option><option value="20">20 דקות</option><option value="30">חצי שעה</option><option value="45">45 דקות</option><option value="60">שעה</option><option value="75">שעה ורבע</option><option value="90">שעה וחצי</option><option value="120">שעתיים</option><option value="150">שעתיים וחצי</option><option value="180">3 שעות</option><option value="240">4 שעות</option><option value="480">8 שעות</option></select>
+                                </div>
+                            </div>
+                            <button type="button" id="copyDayTimesBtn" data-action="copyDayTimes" class="hidden tap-44 h-9 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"></button>
+                            <p id="habitTimeHint" aria-live="polite" class="text-xs text-slate-500 dark:text-slate-400"></p>
+                        </div>
+                    </div>
+
+                    <!-- Category & note -->
+                    <div class="rounded-xl border border-slate-200/80 dark:border-slate-700/70 bg-slate-50 dark:bg-slate-800/40">
+                        <button type="button" id="habitDetailsToggle" data-action="toggleHabitSection" data-arg="details" aria-expanded="false" aria-controls="habitDetailsPanel" class="w-full min-h-[56px] flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-right hover:bg-slate-100/80 dark:hover:bg-slate-800/70 transition">
+                            <span class="w-8 h-8 shrink-0 rounded-lg bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-400" aria-hidden="true">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7 7h.01M3 11.5V5a2 2 0 012-2h6.5a2 2 0 011.41.59l7.5 7.5a2 2 0 010 2.82l-6.5 6.5a2 2 0 01-2.82 0l-7.5-7.5A2 2 0 013 11.5z"/></svg>
+                            </span>
+                            <span class="flex-1 min-w-0">
+                                <span class="block text-sm font-semibold text-slate-800 dark:text-slate-100">קטגוריה והערה</span>
+                                <span id="habitDetailsSummary" class="block text-xs text-slate-500 dark:text-slate-400 truncate"></span>
+                            </span>
+                            <svg data-chevron class="w-4 h-4 shrink-0 text-slate-400 transition-transform duration-200 motion-reduce:transition-none" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                        </button>
+                        <div id="habitDetailsPanel" class="hidden px-3.5 pb-3.5 pt-1 space-y-3">
+                            <div>
+                                <label for="habitCategoryInput" class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">קטגוריה</label>
+                                <select id="habitCategoryInput" class="w-full h-11 px-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-base sm:text-sm font-normal focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                    <!-- Populated dynamically via JS -->
+                                </select>
+                            </div>
+                            <div>
+                                <label for="habitNoteInput" class="block text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1.5">הערה או יעד</label>
+                                <input id="habitNoteInput" type="text" maxlength="55" placeholder="למשל: 20 דקות לפני 09:00" class="w-full h-11 px-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-base sm:text-sm font-normal focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Shown when the schedule of a habit with past days changes: which days does it apply to? -->
+                <div id="scheduleScopeBox" class="hidden p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-900/60 space-y-2.5">
+                    <p class="text-xs font-semibold text-amber-900 dark:text-amber-200">שינית את התזמון. על אילו ימים זה חל?</p>
+                    <div role="radiogroup" aria-label="על אילו ימים חל השינוי" class="grid grid-cols-2 gap-2">
+                        <button type="button" role="radio" id="scopeBtn_forward" data-action="setScheduleScope" data-arg="forward" class="min-h-[44px] px-2 rounded-lg border text-xs font-semibold transition">מהיום והלאה</button>
+                        <button type="button" role="radio" id="scopeBtn_all" data-action="setScheduleScope" data-arg="all" class="min-h-[44px] px-2 rounded-lg border text-xs font-semibold transition">תיקון לכל התקופה</button>
+                    </div>
+                    <p id="scheduleScopeText" class="text-xs leading-relaxed text-amber-800 dark:text-amber-300/90"></p>
+                </div>
+            </form>
+          </div>
+
+            <!-- Sticky footer: the main action is always in reach -->
+            <div class="shrink-0 flex items-center gap-2.5 px-5 md:px-6 py-3 md:py-4 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
+                <button type="button" data-action="closeHabitModal" class="flex-1 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-sm hover:bg-slate-200 dark:hover:bg-slate-700 transition">
+                    ביטול
+                </button>
+                <button type="button" data-action="saveHabit" id="saveHabitBtn" disabled class="flex-[2] h-12 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm shadow-md shadow-indigo-600/25 transition disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none disabled:hover:bg-indigo-600">
+                    שמירת הרגל
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Category Manager Modal -->
+    <div id="categoryModalBackdrop" data-action="backdropClose" class="modal-backdrop fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm hidden items-end md:items-center justify-center p-0 md:p-4 transition-opacity">
+        <div role="dialog" aria-modal="true" aria-label="ניהול קטגוריות"  class="modal-panel modal-sheet w-full max-w-md bg-white dark:bg-slate-900 rounded-t-2xl md:rounded-2xl border-t md:border border-slate-200 dark:border-slate-800 p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] md:pb-5 pt-3 md:pt-5 shadow-2xl max-h-[88dvh] flex flex-col">
+            <span class="sheet-grabber -mt-1 mb-2" aria-hidden="true"></span>
+            <div class="flex items-center justify-between pb-3.5 border-b border-slate-100 dark:border-slate-800">
+                <div>
+                    <h3 class="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                        <span>ניהול קטגוריות</span>
+                    </h3>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">הוספה, שינוי שם או מחיקה של קטגוריות</p>
+                </div>
+                <button type="button" data-action="closeCategories" aria-label="סגירה" class="tap-44 w-10 h-10 shrink-0 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+
+            <!-- Add New Category Form -->
+            <form data-submit="addCategory" data-keydown="addCategoryEnter" class="flex items-center gap-2 mt-4">
+                <input id="modalNewCategoryInput" type="text" maxlength="25" required placeholder="הזינו שם קטגוריה חדשה..." class="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-base sm:text-sm font-normal focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <button type="button" data-action="addCategory" class="h-11 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-semibold shadow-sm transition shrink-0">
+                    + הוספה
+                </button>
+            </form>
+
+            <!-- Categories selection toolbar -->
+            <div id="categorySelectToolbar" class="flex items-center justify-between mt-4 text-xs font-semibold">
+                <span id="categorySelectInfo" class="text-slate-500 dark:text-slate-400"></span>
+                <div class="flex items-center gap-3">
+                    <button type="button" id="categorySelectAllBtn" data-action="selectAllCategories" class="hidden tap-44 h-9 px-2 rounded-lg text-indigo-600 dark:text-indigo-400 hover:underline">בחירת הכל</button>
+                    <button type="button" id="categorySelectToggleBtn" data-action="toggleCategorySelect" class="tap-44 h-9 px-2 rounded-lg text-indigo-600 dark:text-indigo-400 hover:underline">בחירה</button>
+                </div>
+            </div>
+
+            <!-- Categories List -->
+            <div id="modalCategoriesList" class="mt-2 space-y-2 overflow-y-auto pr-1 flex-1">
+                <!-- Populated via JS -->
+            </div>
+
+            <div class="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-2">
+                <button type="button" id="categoryBulkDeleteBtn" data-action="bulkDeleteCategories" disabled class="hidden w-full py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed">מחיקת הקטגוריות שנבחרו</button>
+                <button type="button" data-action="closeCategories" class="w-full py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition">
+                    סיום וסגירה
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Full Monthly Calendar Modal -->
+    <div id="fullCalendarModalBackdrop" data-action="backdropClose" class="modal-backdrop fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm hidden items-end md:items-center justify-center p-0 md:p-4 transition-opacity">
+        <div role="dialog" aria-modal="true" aria-labelledby="calendarTitleText"  class="modal-panel modal-sheet w-full max-w-3xl bg-white dark:bg-slate-900 rounded-t-2xl md:rounded-2xl border-t md:border border-slate-200 dark:border-slate-800 p-4 sm:p-5 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:pb-5 pt-3 sm:pt-5 shadow-2xl max-h-[92dvh] flex flex-col">
+            <span class="sheet-grabber -mt-1 mb-2" aria-hidden="true"></span>
+            
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between pb-3.5 border-b border-slate-100 dark:border-slate-800">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-9 h-9 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                    </div>
+                    <div>
+                        <h3 id="calendarTitleText" class="text-base sm:text-lg font-bold text-slate-900 dark:text-white"><span class="sm:hidden">לוח שנה</span><span class="hidden sm:inline">לוח שנה מלא — בחירת יום לדיווח</span></h3>
+                        <p id="calendarSubtitleText" class="hidden sm:block text-xs text-slate-500 dark:text-slate-400">הקישו על כל יום כדי לעבור אליו ולסמן את ההרגלים שלו</p>
+                    </div>
+                </div>
+                <button type="button" data-action="closeCalendar" aria-label="סגירה" class="tap-44 w-10 h-10 shrink-0 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+
+            <!-- Month Navigation Bar -->
+            <div class="flex items-center justify-between my-3.5 bg-slate-50 dark:bg-slate-800/60 p-2 rounded-xl border border-slate-200/70 dark:border-slate-800">
+                <button type="button" id="calendarPrevBtn" data-action="shiftCalendar" data-arg="-1" aria-label="חודש קודם" class="nudge-prev tap-44 h-10 px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:border-indigo-400 flex items-center gap-1 transition shadow-sm">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                    <span id="calendarPrevLabel" class="hidden sm:inline">חודש קודם</span>
+                </button>
+
+                <div class="flex items-center gap-2">
+                    <button type="button" id="calendarTitleBtn" data-action="toggleYearView" aria-label="מעבר לתצוגה שנתית" class="h-9 flex items-center gap-1 px-2.5 rounded-xl text-sm sm:text-base font-bold text-slate-900 dark:text-white hover:bg-white dark:hover:bg-slate-900 transition">
+                        <span id="calendarMonthYearTitle">אוקטובר 2026</span>
+                        <svg id="calendarTitleChevron" class="w-4 h-4 text-slate-500 dark:text-slate-400 transition-transform" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                    </button>
+                    <button type="button" data-action="calendarToday" class="tap-44 h-9 px-3 rounded-lg bg-indigo-50 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400 text-xs font-semibold hover:bg-indigo-100 transition">
+                        היום
+                    </button>
+                </div>
+
+                <button type="button" id="calendarNextMonthBtn" data-action="shiftCalendar" data-arg="1" aria-label="חודש הבא" class="nudge-next tap-44 h-10 px-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:border-indigo-400 flex items-center gap-1 transition shadow-sm disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-slate-200/80 dark:disabled:hover:border-slate-700">
+                    <span id="calendarNextLabel" class="hidden sm:inline">חודש הבא</span>
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
+                </button>
+            </div>
+
+            <!-- Days of Week Header (א׳ - ש׳) -->
+            <div id="calendarWeekdayHeader" class="grid grid-cols-7 gap-1.5 sm:gap-2 text-center mb-2 px-1">
+                <div class="text-xs font-semibold text-slate-500 dark:text-slate-400"><span class="sm:hidden">א׳</span><span class="hidden sm:inline">יום א׳</span></div>
+                <div class="text-xs font-semibold text-slate-500 dark:text-slate-400"><span class="sm:hidden">ב׳</span><span class="hidden sm:inline">יום ב׳</span></div>
+                <div class="text-xs font-semibold text-slate-500 dark:text-slate-400"><span class="sm:hidden">ג׳</span><span class="hidden sm:inline">יום ג׳</span></div>
+                <div class="text-xs font-semibold text-slate-500 dark:text-slate-400"><span class="sm:hidden">ד׳</span><span class="hidden sm:inline">יום ד׳</span></div>
+                <div class="text-xs font-semibold text-slate-500 dark:text-slate-400"><span class="sm:hidden">ה׳</span><span class="hidden sm:inline">יום ה׳</span></div>
+                <div class="text-xs font-semibold text-slate-500 dark:text-slate-400"><span class="sm:hidden">ו׳</span><span class="hidden sm:inline">יום ו׳</span></div>
+                <div class="text-xs font-semibold text-slate-500 dark:text-slate-400"><span class="sm:hidden">ש׳</span><span class="hidden sm:inline">שבת</span></div>
+            </div>
+
+            <!-- Calendar Days Grid -->
+            <div id="fullCalendarGrid" class="grid grid-cols-7 gap-1.5 sm:gap-2 overflow-y-auto p-1 flex-1">
+                <!-- Populated via JS -->
+            </div>
+
+            <!-- Year Overview Grid (12 mini months) -->
+            <div id="fullCalendarYearGrid" class="hidden grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3 overflow-y-auto p-1 flex-1 content-start">
+                <!-- Populated via JS -->
+            </div>
+
+            <!-- Footer Legend & Summary -->
+            <div id="calendarFooter" class="pt-3.5 mt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+                <div class="flex items-center flex-wrap gap-3">
+                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> הכל הושלם (100%)</span>
+                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-indigo-500 inline-block"></span> בוצע חלקית</span>
+                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-slate-300 dark:bg-slate-700 inline-block"></span> טרם סומן</span>
+                </div>
+                <span id="calendarMonthlySummaryText" class="font-bold text-slate-700 dark:text-slate-300"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Confirmation Dialog Modal -->
+    <div id="confirmModalBackdrop" data-action="backdropNudge" class="modal-backdrop fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm hidden items-center justify-center p-4">
+        <div role="alertdialog" aria-modal="true" aria-labelledby="confirmModalTitle" aria-describedby="confirmModalText" class="modal-panel w-full max-w-sm bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-2xl text-center">
+            <div class="w-12 h-12 rounded-xl bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto mb-3">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+            </div>
+            <h4 id="confirmModalTitle" class="text-lg font-bold text-slate-900 dark:text-white">האם אתם בטוחים?</h4>
+            <p id="confirmModalText" class="text-sm text-slate-600 dark:text-slate-300 mt-1.5 mb-5 leading-relaxed">פעולה זו תעדכן את נתוני ההרגלים שלכם.</p>
+            <button type="button" id="confirmModalAltBtn" data-action="confirmAlt" class="hidden w-full h-11 mb-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition"></button>
+            <div class="flex items-center gap-2">
+                <button type="button" id="confirmModalActionBtn" data-action="confirmAccept" class="flex-1 h-11 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-sm font-semibold transition">אישור</button>
+                <button type="button" data-autofocus data-action="closeConfirm" class="flex-1 h-11 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition">ביטול</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Non-intrusive Interactive Toast Notification (Above Mobile Bottom Nav / Top on Desktop) -->
+    <div id="toastContainer" class="fixed inset-x-4 flex justify-center bottom-[calc(5.5rem+env(safe-area-inset-bottom))] lg:bottom-auto lg:top-4 z-50 pointer-events-none transition-all duration-[250ms] opacity-0 translate-y-2 scale-[0.96] lg:-translate-y-2" role="status" aria-live="polite">
+        <div id="toastInnerBox" class="relative overflow-hidden w-full max-w-md px-4 py-2.5 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xl text-sm font-semibold flex items-center gap-3">
+            <div class="flex items-center gap-2 min-w-0 flex-1">
+                <span id="toastMessage" class="leading-snug text-balance break-words">נשמר בהצלחה!</span>
+            </div>
+            <button id="toastUndoBtn" type="button" data-action="undo" class="hidden tap-44 shrink-0 self-center h-9 px-3.5 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 text-xs font-semibold transition">
+                בטל
+            </button>
+            <span id="toastProgress" class="toast-progress hidden absolute bottom-0 inset-x-0 h-0.5 bg-indigo-400 dark:bg-indigo-500" aria-hidden="true"></span>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,330 @@
+/* Every button reacts the same way: colours at 120ms, a small press, a keyboard ring that settles into place */
+:is(button, [role='button']):not(.motion-off) {
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform, outline-offset;
+    transition-duration: var(--dur-micro);
+    transition-timing-function: var(--ease-out);
+    outline-offset: 0;
+}
+:is(button, [role='button']):not(:disabled):active {
+    transform: scale(0.97);
+    transition-duration: 60ms;
+}
+[role='button']:not([aria-disabled='true']):active {
+    transform: scale(0.99);
+}
+
+:focus-visible {
+    outline: 2px solid #6366f1;
+    outline-offset: 2px;
+}
+html.dark :focus-visible {
+    outline-color: #818cf8;
+}
+
+/* Arrow buttons lean toward where they go */
+.nudge-prev svg,
+.nudge-next svg {
+    transition: transform var(--dur-micro) var(--ease-out);
+}
+@media (hover: hover) {
+    .nudge-prev:not(:disabled):hover svg {
+        transform: translateX(2px);
+    }
+    .nudge-next:not(:disabled):hover svg {
+        transform: translateX(-2px);
+    }
+}
+
+/* Menus and dropdowns grow out of the corner of the button that opened them */
+@keyframes menu-in {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+}
+@keyframes menu-out {
+    to {
+        opacity: 0;
+        transform: scale(0.97);
+    }
+}
+[data-menu-panel]:not(.hidden) {
+    transform-origin: top left;
+    animation: menu-in var(--dur-short) var(--ease-out) both;
+}
+[data-menu-panel].is-closing {
+    animation: menu-out 100ms var(--ease-in) both;
+    pointer-events: none;
+}
+
+/* Modals: the dimmed backdrop fades; the panel scales in on desktop and slides up as a sheet on phones */
+@keyframes backdrop-in {
+    from {
+        opacity: 0;
+    }
+}
+@keyframes backdrop-out {
+    to {
+        opacity: 0;
+    }
+}
+@keyframes panel-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px) scale(0.96);
+    }
+}
+@keyframes panel-out {
+    to {
+        opacity: 0;
+        transform: scale(0.97);
+    }
+}
+@keyframes sheet-in {
+    from {
+        transform: translateY(100%);
+    }
+}
+@keyframes sheet-out {
+    to {
+        transform: translateY(100%);
+    }
+}
+@keyframes shake {
+    20%,
+    60% {
+        transform: translateX(-6px);
+    }
+    40%,
+    80% {
+        transform: translateX(6px);
+    }
+}
+.modal-backdrop.flex {
+    animation: backdrop-in var(--dur-short) var(--ease-out) both;
+}
+.modal-backdrop.flex > .modal-panel {
+    animation: panel-in var(--dur-medium) var(--ease-out) both;
+}
+.modal-backdrop.is-closing {
+    animation: backdrop-out var(--dur-exit) var(--ease-in) both;
+    pointer-events: none;
+}
+.modal-backdrop.is-closing > .modal-panel {
+    animation: panel-out var(--dur-exit) var(--ease-in) both;
+}
+.modal-backdrop.flex > .modal-panel.is-shaking {
+    animation: shake 220ms ease-in-out;
+}
+@media (max-width: 767px) {
+    .modal-backdrop.flex > .modal-sheet {
+        animation-name: sheet-in;
+    }
+    .modal-backdrop.is-closing > .modal-sheet {
+        animation-name: sheet-out;
+    }
+}
+
+/* Sliding pill behind the active option of segmented controls */
+.seg {
+    position: relative;
+    isolation: isolate;
+}
+.seg > :not(.seg-pill) {
+    position: relative;
+    z-index: 1;
+}
+.seg-pill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 0;
+    pointer-events: none;
+    border-radius: 0.75rem;
+    transition:
+        transform var(--dur-short) var(--ease-out),
+        width var(--dur-short) var(--ease-out),
+        height var(--dur-short) var(--ease-out),
+        opacity var(--dur-micro) linear;
+}
+.seg-pill.no-anim {
+    transition: none;
+}
+.seg-pill--tint {
+    background: #eef2ff;
+}
+html.dark .seg-pill--tint {
+    background: rgba(99, 102, 241, 0.15);
+}
+.seg-pill--raised,
+.seg-pill--raised-strong {
+    background: #fff;
+    border-radius: 0.5rem;
+    box-shadow:
+        0 1px 2px rgba(15, 23, 42, 0.08),
+        0 1px 3px rgba(15, 23, 42, 0.06);
+}
+html.dark .seg-pill--raised {
+    background: #334155;
+}
+html.dark .seg-pill--raised-strong {
+    background: #0f172a;
+}
+
+/* Reveal: open and close by height without measuring (grid rows 0fr -> 1fr) */
+.reveal {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transition:
+        grid-template-rows 250ms var(--ease-out),
+        opacity var(--dur-short) var(--ease-out);
+}
+.reveal.is-open {
+    grid-template-rows: 1fr;
+    opacity: 1;
+}
+.reveal > * {
+    overflow: hidden;
+    min-height: 0;
+}
+@keyframes item-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+}
+.reveal.is-opening .stagger-item {
+    animation: item-in var(--dur-short) var(--ease-out) both;
+    animation-delay: calc(var(--i, 0) * 30ms + 60ms);
+}
+
+/* Calendar range picking: the days between the start and the hovered/finished end */
+.cal-in-range {
+    background-color: rgb(238 242 255) !important;
+    border-color: rgb(199 210 254) !important;
+}
+.dark .cal-in-range {
+    background-color: rgb(49 46 129 / 0.35) !important;
+    border-color: rgb(67 56 202 / 0.55) !important;
+}
+.cal-range-end {
+    background-color: rgb(224 231 255) !important;
+    border-color: rgb(99 102 241) !important;
+    box-shadow: inset 0 0 0 1px rgb(99 102 241);
+}
+.dark .cal-range-end {
+    background-color: rgb(55 48 163 / 0.6) !important;
+    border-color: rgb(129 140 248) !important;
+    box-shadow: inset 0 0 0 1px rgb(129 140 248);
+}
+
+/* Drag & drop, selection bar */
+@keyframes drop-down {
+    from {
+        opacity: 0;
+        transform: translateY(-12px);
+    }
+}
+@keyframes rise-in {
+    from {
+        opacity: 0;
+        transform: translateY(16px);
+    }
+}
+#habitDropTray:not(.hidden) > div {
+    animation: drop-down var(--dur-short) var(--ease-out) both;
+}
+#habitDragGhost:not(.hidden) {
+    animation: fadeIn var(--dur-micro) linear both;
+}
+#manageBulkBar:not(.hidden) > div {
+    animation: rise-in 250ms var(--ease-out) both;
+}
+.drop-chip {
+    transition:
+        transform var(--dur-micro) var(--ease-out),
+        background-color var(--dur-micro),
+        color var(--dur-micro);
+}
+
+/* Form feedback */
+@keyframes field-shake {
+    20%,
+    60% {
+        transform: translateX(-5px);
+    }
+    40%,
+    80% {
+        transform: translateX(5px);
+    }
+}
+.field-shake {
+    animation: field-shake 260ms ease-in-out;
+}
+.field-error {
+    border-color: #e11d48 !important;
+    box-shadow: 0 0 0 2px rgba(225, 29, 72, 0.25) !important;
+}
+[id^='goalPanel_']:not(.hidden) {
+    animation: fadeIn var(--dur-short) var(--ease-out) both;
+}
+
+/* Tooltip */
+.app-tooltip {
+    position: fixed;
+    z-index: 90;
+    pointer-events: none;
+    max-width: 240px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-size: 0.8125rem;
+    line-height: 1.25rem;
+    font-weight: 600;
+    background: #0f172a;
+    color: #fff;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+    opacity: 0;
+    transform: translateY(4px);
+    transition:
+        opacity var(--dur-micro) var(--ease-out),
+        transform var(--dur-micro) var(--ease-out);
+}
+.app-tooltip.is-below {
+    transform: translateY(-4px);
+}
+.app-tooltip.is-visible {
+    opacity: 1;
+    transform: none;
+}
+html.dark .app-tooltip {
+    background: #f1f5f9;
+    color: #0f172a;
+}
+
+/* Toast: undo countdown, paused while the pointer is on it */
+@keyframes toast-countdown {
+    from {
+        transform: scaleX(1);
+    }
+    to {
+        transform: scaleX(0);
+    }
+}
+@keyframes toast-text-in {
+    from {
+        opacity: 0;
+    }
+}
+.toast-progress {
+    transform-origin: right;
+}
+.toast-progress.is-running {
+    animation: toast-countdown 5s linear forwards;
+}
+.toast-paused .toast-progress {
+    animation-play-state: paused;
+}
+.toast-text-in {
+    animation: toast-text-in var(--dur-short) var(--ease-out);
+}

@@ -1,0 +1,12 @@
+/* ================= Motion =================
+ * Durations: micro 120ms (hover, press, colour) · short 200ms (menus, toggles) · medium 280ms (modals, sheets)
+ * Exits are ~70% of the entry. One ease for entering, one for leaving. Spring is reserved for checking a habit.
+ */
+:root {
+    --dur-micro: 120ms;
+    --dur-short: 200ms;
+    --dur-medium: 280ms;
+    --dur-exit: 180ms;
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-in: cubic-bezier(0.4, 0, 1, 1);
+}
