@@ -10,6 +10,7 @@ export const ORIGINAL_URL = pathToFileURL(path.join(ROOT, 'legacy/habit_tracker_
 export const SINGLE_FILE_URL = pathToFileURL(path.join(ROOT, 'dist-single/habit_tracker_dashboard.html')).href;
 export const PREVIEW_URL = 'http://localhost:4173/';
 export const ARTIFACTS = path.join(ROOT, 'e2e/.artifacts');
+export const INTRO_SEEN_KEY = 'habit_tracker_intro_seen_v1';
 
 /** Wednesday 21 Oct 2026, 10:00 in Israel (the time zone of every context). */
 export const NOW = new Date('2026-10-21T10:00:00+03:00');
@@ -34,7 +35,11 @@ export async function freezeClock(page) {
  * A context + page for one app, with a frozen clock (see freezeClock) and an error log. Two apps
  * compared side by side live on exactly the same timeline.
  */
-export async function openApp(browser, url, { viewport = VIEWPORTS.desktop, colorScheme = 'light', storage } = {}) {
+export async function openApp(
+    browser,
+    url,
+    { viewport = VIEWPORTS.desktop, colorScheme = 'light', storage, intro = false } = {}
+) {
     const context = await browser.newContext({
         viewport,
         colorScheme,
@@ -43,6 +48,12 @@ export async function openApp(browser, url, { viewport = VIEWPORTS.desktop, colo
         isMobile: viewport.width < 768,
         hasTouch: false
     });
+    // The intro screen (new, the original has none) is skipped unless a test is about it.
+    if (!intro) {
+        await context.addInitScript(key => {
+            if (!localStorage.getItem(key)) localStorage.setItem(key, '1');
+        }, INTRO_SEEN_KEY);
+    }
     if (storage) {
         await context.addInitScript(entries => {
             if (sessionStorage.getItem('__seeded')) return;

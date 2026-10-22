@@ -20,8 +20,11 @@ import { wireToastPause } from './ui/components/toast.js';
 import { initTooltips } from './ui/components/tooltip.js';
 import { wireRangePreview } from './ui/dialogs/calendar/calendar.js';
 import { wireHabitDrag } from './ui/sections/manage/drag-drop.js';
+import { showIntro } from './ui/shell/intro.js';
 import { initDeviceTheme, wireSystemTheme } from './ui/shell/theme.js';
 
+// First, so it covers the page while the app boots behind it (it does nothing once seen).
+showIntro();
 initDeviceTheme();
 initSegPills();
 wireModalKeyboard();

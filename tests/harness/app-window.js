@@ -12,6 +12,7 @@ import FakeTimers from '@sinonjs/fake-timers';
 import { legacyParts } from './paths.js';
 import { installDomPolyfills } from './dom-polyfills.js';
 import { buildModernBundle } from './modern-bundle.js';
+import { INTRO_SEEN_KEY } from '../../src/config/storage-keys.js';
 
 const TO_FAKE = [
     'setTimeout',
@@ -82,7 +83,11 @@ export async function createApp(kind, { now, storage = {}, beforeBoot } = {}) {
         shouldClearNativeTimers: true,
         loopLimit: 100000
     });
-    for (const [key, value] of Object.entries(storage)) window.localStorage.setItem(key, value);
+    // The intro screen is new (the original has none): marked as seen in both apps, so the
+    // refactored one boots straight into the app and both storages stay equal.
+    for (const [key, value] of Object.entries({ [INTRO_SEEN_KEY]: '1', ...storage })) {
+        window.localStorage.setItem(key, value);
+    }
     if (beforeBoot) beforeBoot(window);
 
     window.eval(themeScript);

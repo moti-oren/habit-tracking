@@ -1,0 +1,402 @@
+/* ================= Intro screen (src/ui/shell/intro.js) =================
+ * Above the first-load skeleton (z-index 100) and the skip link (110). Everything that moves is a
+ * transform or opacity, except the ring's stroke offset (a small SVG repaint).
+ */
+.intro {
+    --intro-bg: #f8fafc;
+    --intro-text: #0f172a;
+    --intro-muted: #64748b;
+    --intro-track: #e2e8f0;
+    --intro-accent: #4f46e5;
+    --intro-glow: rgba(99, 102, 241, 0.07);
+    --dial: min(260px, 64vw, 38vh);
+
+    position: fixed;
+    inset: 0;
+    z-index: 120;
+    display: grid;
+    place-items: center;
+    overflow-y: auto;
+    /* the rotating orbit layers are squares: their corners must not make it scroll sideways */
+    overflow-x: hidden;
+    padding: max(72px, env(safe-area-inset-top)) 16px max(32px, env(safe-area-inset-bottom));
+    background: var(--intro-bg);
+    color: var(--intro-text);
+    font-family: Heebo, sans-serif;
+    text-align: center;
+    outline: none;
+    transition: opacity 520ms var(--ease-out);
+}
+html.dark .intro {
+    --intro-bg: #020617;
+    --intro-text: #f1f5f9;
+    --intro-muted: #94a3b8;
+    --intro-track: #1e293b;
+    --intro-accent: #818cf8;
+    --intro-glow: rgba(99, 102, 241, 0.13);
+}
+
+/* One quiet, still glow behind the dial */
+.intro-bg {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(circle at 50% 55%, var(--intro-glow), transparent min(60vw, 400px));
+}
+
+/* Header row: the brand at the start, skip at the end */
+.intro-brand {
+    position: fixed;
+    top: max(20px, env(safe-area-inset-top));
+    right: 20px;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.9375rem;
+    font-weight: 600;
+}
+.intro-logo {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    background: #4f46e5;
+    color: #fff;
+}
+.intro-logo svg {
+    width: 17px;
+    height: 17px;
+}
+.intro-skip {
+    position: fixed;
+    top: max(13px, calc(env(safe-area-inset-top) - 7px));
+    left: 12px;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    min-height: 44px;
+    padding: 0 12px 0 8px;
+    border-radius: 9999px;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--intro-muted);
+    transition:
+        color var(--dur-micro) var(--ease-out),
+        background-color var(--dur-micro) var(--ease-out);
+}
+.intro-skip svg {
+    width: 18px;
+    height: 18px;
+}
+.intro-skip:hover {
+    color: var(--intro-text);
+    background: rgba(148, 163, 184, 0.14);
+}
+.intro-skip:focus-visible,
+.intro-knob:focus-visible {
+    outline: 2px solid var(--intro-accent);
+    outline-offset: 4px;
+}
+
+.intro-content {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    max-width: 32rem;
+    transition: transform 620ms var(--ease-out);
+}
+
+/* Two lines, two tones: the statement, then its quieter second half */
+.intro-title {
+    font-size: clamp(1.75rem, 1.3rem + 2vw, 2.75rem);
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.025em;
+}
+.intro-title span {
+    display: block;
+    color: var(--intro-muted);
+}
+
+/* The dial: the whole square is the drag surface */
+.intro-dial {
+    position: relative;
+    width: var(--dial);
+    height: var(--dial);
+    margin-top: clamp(28px, 6vh, 56px);
+    /* the rotating orbit layers are squares: their corners must not make the page scroll; the
+       margin keeps the knob's shadow and focus ring */
+    overflow: clip;
+    overflow-clip-margin: 16px;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: grab;
+}
+.intro.is-dragging .intro-dial {
+    cursor: grabbing;
+}
+.intro.is-complete .intro-dial {
+    cursor: default;
+}
+.intro-ring {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+}
+/* Seven arcs, one per day: each fills over its own track */
+.intro-track,
+.intro-day {
+    fill: none;
+    stroke-linecap: round;
+}
+.intro-track {
+    stroke: var(--intro-track);
+}
+.intro-day {
+    stroke: var(--intro-accent);
+    visibility: hidden;
+}
+.intro-dial.is-stepping .intro-day {
+    transition: stroke-dashoffset var(--dur-short) var(--ease-out);
+}
+.intro-dial.is-stepping .intro-orbit {
+    transition: transform var(--dur-short) var(--ease-out);
+}
+
+.intro-center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+.intro-count {
+    font-size: calc(var(--dial) * 0.24);
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+    transition:
+        opacity var(--dur-short) var(--ease-out),
+        transform var(--dur-short) var(--ease-out);
+}
+.intro-count-label {
+    margin-top: 8px;
+    font-size: 0.8125rem;
+    color: var(--intro-muted);
+    transition: opacity var(--dur-short) var(--ease-out);
+}
+.intro-check {
+    position: absolute;
+    width: calc(var(--dial) * 0.28);
+    height: calc(var(--dial) * 0.28);
+    color: var(--intro-accent);
+    stroke-dasharray: 24;
+    stroke-dashoffset: 24;
+    opacity: 0;
+}
+.intro.is-complete .intro-count,
+.intro.is-complete .intro-count-label {
+    opacity: 0;
+    transform: scale(0.8);
+}
+.intro.is-complete .intro-check {
+    opacity: 1;
+    animation: intro-check-draw 420ms var(--ease-out) 80ms forwards;
+}
+@keyframes intro-check-draw {
+    to {
+        stroke-dashoffset: 0;
+    }
+}
+.intro.is-complete .intro-ring {
+    animation: intro-ring-pulse 520ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes intro-ring-pulse {
+    50% {
+        transform: scale(1.03);
+    }
+}
+
+/* The knob rides an orbit layer that rotates around the dial's centre */
+.intro-orbit {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    will-change: transform;
+}
+.intro-knob,
+.intro-ghost {
+    position: absolute;
+    left: 50%;
+    width: 30px;
+    height: 30px;
+    margin: -15px 0 0 -15px;
+    border-radius: 50%;
+}
+.intro-knob {
+    pointer-events: auto;
+    background: var(--intro-accent);
+    box-shadow:
+        inset 0 0 0 4px #fff,
+        0 0 0 1px rgba(15, 23, 42, 0.08),
+        0 2px 4px rgba(15, 23, 42, 0.12),
+        0 8px 20px -6px rgba(15, 23, 42, 0.35);
+    transition: transform var(--dur-short) var(--ease-out);
+}
+.intro.is-dragging .intro-knob {
+    transform: scale(1.15);
+}
+.intro.is-complete .intro-knob {
+    transform: scale(0);
+}
+
+/* A ghost knob shows the motion: a short arc clockwise, until the first interaction */
+.intro-hint {
+    animation: intro-hint-orbit 2.6s var(--ease-out) 900ms infinite;
+}
+.intro-ghost {
+    background: var(--intro-accent);
+    opacity: 0;
+    animation: intro-hint-fade 2.6s linear 900ms infinite;
+}
+.intro.has-interacted .intro-hint {
+    display: none;
+}
+@keyframes intro-hint-orbit {
+    from {
+        transform: rotate(0deg);
+    }
+    60%,
+    to {
+        transform: rotate(80deg);
+    }
+}
+@keyframes intro-hint-fade {
+    0% {
+        opacity: 0;
+    }
+    12% {
+        opacity: 0.22;
+    }
+    50% {
+        opacity: 0.14;
+    }
+    62%,
+    100% {
+        opacity: 0;
+    }
+}
+
+.intro-how {
+    margin-top: clamp(28px, 5vh, 48px);
+    font-size: 0.9375rem;
+    color: var(--intro-muted);
+}
+/* Shown only to keyboard users (screen readers always get it through aria-describedby) */
+.intro-keys {
+    margin-top: 6px;
+    font-size: 0.8125rem;
+    color: var(--intro-muted);
+    opacity: 0;
+    transition: opacity var(--dur-short) var(--ease-out);
+}
+.intro-content:has(.intro-knob:focus-visible) .intro-keys {
+    opacity: 1;
+}
+.intro-sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+}
+
+/* Entry: the content rises in, one block after another */
+.intro-stagger {
+    animation: intro-rise 640ms var(--ease-out) both;
+}
+.intro-dial.intro-stagger {
+    animation-delay: 90ms;
+}
+.intro-how.intro-stagger {
+    animation-delay: 180ms;
+}
+@keyframes intro-rise {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+}
+
+/* Exit: the screen opens up into the app */
+.intro.is-leaving {
+    opacity: 0;
+    pointer-events: none;
+}
+.intro.is-leaving .intro-content {
+    transform: scale(1.06);
+}
+
+/* Short and wide (a phone on its side): the text beside the dial */
+@media (max-height: 520px) and (orientation: landscape) {
+    .intro {
+        --dial: min(220px, 54vh);
+        padding-top: max(56px, env(safe-area-inset-top));
+        padding-bottom: 12px;
+    }
+    .intro-content {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        column-gap: 48px;
+        align-items: center;
+        max-width: 44rem;
+    }
+    .intro-content > * {
+        grid-column: 1;
+    }
+    .intro-content > .intro-dial {
+        grid-column: 2;
+        grid-row: 1 / span 4;
+        margin: 0;
+    }
+    .intro-how {
+        margin-top: 16px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .intro {
+        transition-duration: 200ms;
+    }
+    .intro-hint,
+    .intro-ghost,
+    .intro.is-complete .intro-ring {
+        animation: none;
+    }
+    .intro-hint {
+        display: none;
+    }
+    .intro-stagger {
+        animation-name: fadeIn;
+    }
+    .intro.is-complete .intro-check {
+        animation: none;
+        stroke-dashoffset: 0;
+    }
+    .intro.is-leaving .intro-content,
+    .intro.is-dragging .intro-knob,
+    .intro.is-complete .intro-count {
+        transform: none;
+    }
+}

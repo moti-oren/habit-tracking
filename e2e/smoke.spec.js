@@ -1,6 +1,7 @@
 // Smoke tests of the production builds in a real browser.
 import { test, expect } from '@playwright/test';
 import {
+    INTRO_SEEN_KEY,
     ORIGINAL_URL,
     PREVIEW_URL,
     SINGLE_FILE_URL,
@@ -8,6 +9,7 @@ import {
     freezeClock,
     openApp,
     pick,
+    press,
     settle,
     tap
 } from './helpers.js';
@@ -129,6 +131,11 @@ test.describe('the single-file build opened from disk', () => {
         // the new file, in place of the old one
         await page.goto(SINGLE_FILE_URL);
         await settle(page, 2000);
+        // the intro is new to someone who used the original: shown once, and skipping it changes no data
+        await expect(page.locator('#intro')).toBeVisible();
+        await press(page, 'Escape');
+        await settle(page, 1000);
+        await expect(page.locator('#intro')).toHaveCount(0);
         const after = await page.evaluate(() => ({ ...localStorage }));
         expect(after[KEY.habits]).toBe(saved[KEY.habits]);
         expect(after[KEY.categories]).toBe(saved[KEY.categories]);
@@ -141,6 +148,76 @@ test.describe('the single-file build opened from disk', () => {
         );
         await tap(page, '[data-action="switchSection"][data-arg="tracker"]');
         await expect(page.locator('[data-action="toggleDay"][data-id="h5"]')).toHaveAttribute('aria-pressed', 'true');
+        expect(errors).toEqual([]);
+        await context.close();
+    });
+});
+
+test.describe('the intro screen', () => {
+    const introOpen = page => page.evaluate(() => !!document.getElementById('intro'));
+
+    test('opens over an inert app, and a drag around the ring completes the week and opens the app', async ({
+        browser
+    }) => {
+        const { context, page, errors } = await openApp(browser, PREVIEW_URL, { intro: true });
+        await expect(page.locator('#intro')).toBeVisible();
+        await expect(page.locator('#intro')).toHaveAttribute('aria-modal', 'true');
+        expect(await page.evaluate(() => document.querySelector('header').closest('[inert]') !== null)).toBe(true);
+
+        const box = await page.locator('[data-intro-dial]').boundingBox();
+        const cx = box.x + box.width / 2;
+        const cy = box.y + box.height / 2;
+        const r = box.width * 0.36;
+        await page.mouse.move(cx, cy - r);
+        await page.mouse.down();
+        // clockwise from the top, half way: 3 of 7 days
+        for (let i = 1; i <= 30; i++) {
+            const a = (i / 60) * Math.PI * 2;
+            await page.mouse.move(cx + Math.sin(a) * r, cy - Math.cos(a) * r);
+        }
+        await settle(page, 100);
+        await expect(page.locator('[data-intro-knob]')).toHaveAttribute('aria-valuenow', '3');
+        await expect(page.locator('.intro-day.is-on')).toHaveCount(3);
+        for (let i = 31; i <= 60; i++) {
+            const a = (i / 60) * Math.PI * 2;
+            await page.mouse.move(cx + Math.sin(a) * r, cy - Math.cos(a) * r);
+        }
+        await page.mouse.up();
+        await settle(page, 2000);
+        expect(await introOpen(page)).toBe(false);
+        expect(await page.evaluate(() => document.querySelector('header').closest('[inert]'))).toBeNull();
+        expect(await page.evaluate(k => localStorage.getItem(k), INTRO_SEEN_KEY)).toBe('1');
+
+        // remembered: a reload goes straight to the app, and ?intro shows it again
+        await page.reload();
+        await settle(page, 1500);
+        expect(await introOpen(page)).toBe(false);
+        await page.goto(`${PREVIEW_URL}?intro`);
+        await settle(page, 1500);
+        expect(await introOpen(page)).toBe(true);
+        expect(errors).toEqual([]);
+        await context.close();
+    });
+
+    test('works from the keyboard, and Escape skips it', async ({ browser }) => {
+        const { context, page, errors } = await openApp(browser, PREVIEW_URL, { intro: true });
+        const knob = page.locator('[data-intro-knob]');
+        await knob.focus();
+        await press(page, 'ArrowRight');
+        await press(page, 'ArrowRight');
+        await press(page, 'ArrowLeft');
+        await expect(knob).toHaveAttribute('aria-valuetext', '1 מתוך 7 ימים');
+        await press(page, 'Enter');
+        await settle(page, 2000);
+        expect(await introOpen(page)).toBe(false);
+
+        await page.goto(`${PREVIEW_URL}?intro`);
+        await settle(page, 1500);
+        await press(page, 'Escape');
+        await settle(page, 1000);
+        expect(await introOpen(page)).toBe(false);
+        // the app's own Escape handling didn't run under it, and the app works
+        await expect(page.locator('#daySelectorStrip button')).toHaveCount(7);
         expect(errors).toEqual([]);
         await context.close();
     });
