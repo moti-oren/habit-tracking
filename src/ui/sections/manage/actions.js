@@ -203,18 +203,21 @@ export function toggleArchiveSection() {
     }
 }
 
+/** Replaces the habits and categories with the sample data, and shows today. */
+export function loadSampleData(message = 'נתוני הדוגמה שוחזרו') {
+    setWeek(0);
+    tracker.selectedCategory = 'הכל';
+    manage.selectedCategory = 'הכל';
+    tracker.selectedDateKey = getDateKeyDaysAgo(0);
+    Store.resetToDefaults(getDefaultHabits);
+    showToast(message);
+    renderAll();
+}
+
 export function openResetModal() {
     openConfirmModal(
         'איפוס הרגלים לדוגמה?',
         'האם לשחזר את רשימת ההרגלים והקטגוריות לדוגמה ואת נתוני השבוע הנוכחי?',
-        () => {
-            setWeek(0);
-            tracker.selectedCategory = 'הכל';
-            manage.selectedCategory = 'הכל';
-            tracker.selectedDateKey = getDateKeyDaysAgo(0);
-            Store.resetToDefaults(getDefaultHabits);
-            showToast('נתוני הדוגמה שוחזרו');
-            renderAll();
-        }
+        () => loadSampleData()
     );
 }

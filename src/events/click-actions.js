@@ -47,6 +47,7 @@ import {
     bulkDeleteSelectedHabits,
     exitManageSelectMode,
     handleManageCardClick,
+    loadSampleData,
     openResetModal,
     promptDeleteHabitById,
     restoreHabitById,
@@ -93,6 +94,8 @@ export const ClickActions = {
         closeAllMenus();
         openResetModal();
     },
+    // from the first-run screen: nothing to lose, so no confirmation
+    loadSampleData: () => loadSampleData('נתוני הדוגמה נטענו'),
     toggleSelectMode: () => toggleManageSelectMode(),
     openCategories: () => openCategoryManagerModal(),
     selectAllHabits: () => toggleSelectAllManageHabits(),

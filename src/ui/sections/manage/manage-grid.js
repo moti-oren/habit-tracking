@@ -13,6 +13,8 @@ import { isHabitScheduledForDayOfWeek } from '../../../core/schedule.js';
 import { manage } from '../../../state/manage.js';
 import { motion } from '../../../state/motion.js';
 import { calculateStreak, getLiveHabits } from '../../../store/selectors.js';
+import { Store } from '../../../store/store.js';
+import { emptyStateHtml, firstRunHtml } from '../../components/empty-state.js';
 import { flashClassFor } from '../../dom/flip.js';
 import { escapeHtml, timeRangeHtml } from '../../dom/html.js';
 import { patchHTML } from '../../dom/patch.js';
@@ -41,17 +43,31 @@ export function renderManageSection() {
     updateManageBulkBar();
 
     if (filtered.length === 0) {
-        patchHTML(
-            grid,
-            `
-            <div class="md:col-span-2 bg-white dark:bg-slate-900 rounded-2xl p-10 text-center border border-dashed border-slate-300 dark:border-slate-700">
-                <p class="text-sm font-bold text-slate-700 dark:text-slate-200">לא נמצאו הרגלים בקטגוריה זו</p>
-                <button data-action="newHabit" class="mt-3 px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold">
-                    + הוספת הרגל חדש
-                </button>
-            </div>
-        `
-        );
+        const span = 'md:col-span-2';
+        let html;
+        if (Store.habits.length === 0) {
+            html = firstRunHtml(span);
+        } else if (liveHabits.length === 0) {
+            html = emptyStateHtml({
+                icon: 'sparkles',
+                title: 'כל ההרגלים בארכיון',
+                text: 'אפשר לשחזר הרגל מהארכיון שלמטה, עם כל ההיסטוריה שלו, או להתחיל הרגל חדש.',
+                actions: [{ label: '+ הרגל חדש', action: 'newHabit', primary: true }],
+                className: span
+            });
+        } else {
+            html = emptyStateHtml({
+                icon: 'tag',
+                title: `אין הרגלים בקטגוריה „${escapeHtml(manage.selectedCategory)}”`,
+                text: 'אפשר להוסיף לה הרגל חדש, או לגרור לכאן הרגל מקטגוריה אחרת.',
+                actions: [
+                    { label: '+ הרגל חדש', action: 'newHabit', primary: true },
+                    { label: 'כל ההרגלים', action: 'setCategoryFilter', attrs: 'data-cat="הכל" data-ctx="manage"' }
+                ],
+                className: span
+            });
+        }
+        patchHTML(grid, html);
         return;
     }
 

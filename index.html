@@ -26,19 +26,48 @@
     <!-- Critical CSS: the first-load skeleton has to look right before the stylesheet arrives. -->
     <style>
         /* First-load skeleton (plain CSS, removed after the first render) */
-        #appSkeleton { position: fixed; inset: 0; z-index: 100; background: #f1f5f9; transition: opacity var(--dur-short) var(--ease-out); }
+        /* It mirrors the tracker's layout: header, week strip, category chips, habit cards */
+        #appSkeleton { position: fixed; inset: 0; z-index: 100; overflow: hidden; background: #f1f5f9; transition: opacity var(--dur-short) var(--ease-out); }
         html.dark #appSkeleton { background: #020617; }
         #appSkeleton.is-done { opacity: 0; pointer-events: none; }
-        #appSkeleton .sk-wrap { max-width: 80rem; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+        #appSkeleton .sk-wrap { max-width: 80rem; margin: 0 auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 22px; }
         #appSkeleton .sk-row { display: flex; gap: 12px; align-items: center; }
-        #appSkeleton .sk { border-radius: 16px; background: linear-gradient(90deg, #e2e8f0 0%, #f8fafc 50%, #e2e8f0 100%); background-size: 200% 100%; animation: sk-shimmer 1.2s linear infinite; }
-        html.dark #appSkeleton .sk { background-image: linear-gradient(90deg, #0f172a 0%, #1e293b 50%, #0f172a 100%); }
+        #appSkeleton .sk-between { justify-content: space-between; }
+        #appSkeleton .sk { border-radius: 8px; background: linear-gradient(90deg, #e2e8f0 0%, #f1f5f9 50%, #e2e8f0 100%); background-size: 200% 100%; animation: sk-shimmer 1.4s linear infinite; }
+        html.dark #appSkeleton .sk { background-image: linear-gradient(90deg, #1e293b 0%, #273449 50%, #1e293b 100%); }
+        #appSkeleton .sk-surface { background: #fff; border: 1px solid rgba(226, 232, 240, 0.8); border-radius: 16px; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04); }
+        html.dark #appSkeleton .sk-surface { background: #0f172a; border-color: #1e293b; }
         #appSkeleton .sk-logo { width: 44px; height: 44px; border-radius: 12px; }
-        #appSkeleton .sk-title { width: 160px; height: 28px; border-radius: 8px; }
-        #appSkeleton .sk-nav { height: 150px; }
-        #appSkeleton .sk-line { width: 40%; height: 24px; border-radius: 8px; }
-        #appSkeleton .sk-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
-        #appSkeleton .sk-card { height: 150px; }
+        #appSkeleton .sk-title { width: 130px; height: 24px; }
+        #appSkeleton .sk-nav { display: flex; gap: 6px; padding: 6px; }
+        #appSkeleton .sk-nav .sk { width: 84px; height: 36px; border-radius: 12px; }
+        #appSkeleton .sk-btn { width: 40px; height: 40px; border-radius: 12px; }
+        #appSkeleton .sk-week { padding: 20px; display: flex; flex-direction: column; gap: 18px; }
+        #appSkeleton .sk-line { width: 190px; height: 18px; }
+        #appSkeleton .sk-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
+        #appSkeleton .sk-day { height: 76px; border-radius: 14px; }
+        #appSkeleton .sk-chips { gap: 8px; overflow: hidden; }
+        #appSkeleton .sk-chip { flex-shrink: 0; }
+        #appSkeleton .sk-chip { width: 72px; height: 34px; border-radius: 9999px; }
+        #appSkeleton .sk-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+        #appSkeleton .sk-card { padding: 20px; height: 184px; display: flex; flex-direction: column; gap: 12px; }
+        #appSkeleton .sk-icon { width: 48px; height: 48px; border-radius: 12px; }
+        #appSkeleton .sk-l1 { width: 55%; height: 14px; }
+        #appSkeleton .sk-l2 { width: 35%; height: 12px; }
+        #appSkeleton .sk-foot { margin-top: auto; width: 60%; height: 12px; }
+        #appSkeleton .sk-tabbar { display: none; }
+        @media (max-width: 1023px) {
+            #appSkeleton .sk-cards { grid-template-columns: repeat(2, 1fr); }
+            #appSkeleton .sk-cards > :nth-child(3) { display: none; }
+        }
+        @media (max-width: 767px) {
+            #appSkeleton .sk-desktop { display: none; }
+            #appSkeleton .sk-day { height: 64px; }
+            #appSkeleton .sk-cards { grid-template-columns: 1fr; }
+            #appSkeleton .sk-cards > :nth-child(3) { display: flex; }
+            #appSkeleton .sk-tabbar { display: flex; position: fixed; inset: auto 0 0 0; height: calc(72px + env(safe-area-inset-bottom)); padding: 8px 16px env(safe-area-inset-bottom); gap: 8px; border-width: 1px 0 0; border-radius: 0; }
+            #appSkeleton .sk-tabbar .sk { flex: 1; height: 52px; border-radius: 14px; }
+        }
         @keyframes sk-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 
         @media (prefers-reduced-motion: reduce) {
@@ -54,11 +83,23 @@
     <!-- App-shell skeleton: plain CSS so it shows before Tailwind has styled the page; removed after the first render -->
     <div id="appSkeleton" aria-hidden="true">
         <div class="sk-wrap">
-            <div class="sk-row"><div class="sk sk-logo"></div><div class="sk sk-title"></div></div>
-            <div class="sk sk-nav"></div>
-            <div class="sk sk-line"></div>
-            <div class="sk-cards"><div class="sk sk-card"></div><div class="sk sk-card"></div><div class="sk sk-card"></div></div>
+            <div class="sk-row sk-between">
+                <div class="sk-row"><div class="sk sk-logo"></div><div class="sk sk-title"></div></div>
+                <div class="sk-surface sk-nav sk-desktop"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
+                <div class="sk-row"><div class="sk sk-btn"></div><div class="sk sk-btn"></div></div>
+            </div>
+            <div class="sk-surface sk-week">
+                <div class="sk sk-line"></div>
+                <div class="sk-days"><div class="sk sk-day"></div><div class="sk sk-day"></div><div class="sk sk-day"></div><div class="sk sk-day"></div><div class="sk sk-day"></div><div class="sk sk-day"></div><div class="sk sk-day"></div></div>
+            </div>
+            <div class="sk-row sk-chips"><div class="sk sk-chip"></div><div class="sk sk-chip"></div><div class="sk sk-chip"></div><div class="sk sk-chip"></div><div class="sk sk-chip"></div></div>
+            <div class="sk-cards">
+                <div class="sk-surface sk-card"><div class="sk sk-icon"></div><div class="sk sk-l1"></div><div class="sk sk-l2"></div><div class="sk sk-foot"></div></div>
+                <div class="sk-surface sk-card"><div class="sk sk-icon"></div><div class="sk sk-l1"></div><div class="sk sk-l2"></div><div class="sk sk-foot"></div></div>
+                <div class="sk-surface sk-card"><div class="sk sk-icon"></div><div class="sk sk-l1"></div><div class="sk sk-l2"></div><div class="sk sk-foot"></div></div>
+            </div>
         </div>
+        <div class="sk-surface sk-tabbar"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
     </div>
 
     <div class="w-full max-w-7xl mx-auto min-h-screen flex flex-col pb-[calc(7rem+env(safe-area-inset-bottom))] lg:pb-12">
@@ -253,13 +294,16 @@
                 </div>
 
                 <!-- Empty state: nothing to measure yet -->
-                <div id="analyticsEmptyState" class="hidden bg-white dark:bg-slate-900 rounded-2xl p-8 sm:p-10 text-center border border-dashed border-slate-300 dark:border-slate-700">
-                    <div class="w-12 h-12 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto mb-3">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 19h16M7 15v-3m5 3V8m5 7v-5"/></svg>
+                <div id="analyticsEmptyState" class="hidden bg-white dark:bg-slate-900 rounded-2xl px-6 py-12 sm:py-14 text-center border border-slate-200/80 dark:border-slate-800 shadow-sm">
+                    <div class="w-14 h-14 rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto mb-4">
+                        <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 19h16M7 15v-3m5 3V8m5 7v-5"/></svg>
                     </div>
                     <h2 class="text-base font-bold text-slate-900 dark:text-white">עוד אין מה למדוד</h2>
-                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1 mb-4">הוסיפו הרגל וסמנו אותו כמה ימים. הגרפים והדירוג יופיעו כאן.</p>
-                    <button type="button" data-action="newHabit" class="h-11 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold transition">+ הוספת הרגל</button>
+                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1.5 max-w-sm mx-auto leading-relaxed">הוסיפו הרגל וסמנו אותו כמה ימים, והגרפים, הרצפים והדירוג יופיעו כאן. או טענו נתוני דוגמה של כמה חודשים.</p>
+                    <div class="mt-6 flex flex-wrap items-center justify-center gap-2">
+                        <button type="button" data-action="newHabit" class="h-11 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold shadow-sm shadow-indigo-500/20 transition">+ הרגל ראשון</button>
+                        <button type="button" data-action="loadSampleData" class="h-11 px-5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-semibold transition">טעינת נתוני דוגמה</button>
+                    </div>
                 </div>
 
                 <!-- Top Summary KPI Row (4 Cards) -->

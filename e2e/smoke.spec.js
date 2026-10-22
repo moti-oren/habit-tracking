@@ -107,6 +107,38 @@ test.describe('the multi-file build (vite preview)', () => {
     });
 });
 
+test.describe('empty states', () => {
+    test('with no habits, the first-run screen loads the sample data in one click', async ({ browser }) => {
+        const { context, page, errors } = await openApp(browser, PREVIEW_URL, { storage: { [KEY.habits]: '[]' } });
+        await expect(page.locator('#habitsListContainer')).toContainText('בואו נתחיל לבנות הרגלים');
+        await tap(page, '[data-action="switchSection"][data-arg="manage"]');
+        await expect(page.locator('#manageHabitsGrid')).toContainText('בואו נתחיל לבנות הרגלים');
+        await tap(page, '[data-action="switchSection"][data-arg="analytics"]');
+        await expect(page.locator('#analyticsEmptyState')).toBeVisible();
+        await tap(page, '#analyticsEmptyState [data-action="loadSampleData"]');
+        await expect(page.locator('#toastMessage')).toHaveText('נתוני הדוגמה נטענו');
+        await expect(page.locator('#analyticsEmptyState')).toBeHidden();
+        expect(await stored(page)).toHaveLength(9);
+        await tap(page, '[data-action="switchSection"][data-arg="tracker"]');
+        await expect(page.locator('[data-action="toggleDay"]')).toHaveCount(9);
+        expect(errors).toEqual([]);
+        await context.close();
+    });
+
+    test('an empty category says which one, and leads back to all habits', async ({ browser }) => {
+        const categories = JSON.stringify(['בריאות', 'כושר', 'למידה', 'מיינדפולנס', 'פוקוס', 'ערב']);
+        const { context, page, errors } = await openApp(browser, PREVIEW_URL, {
+            storage: { [KEY.categories]: categories }
+        });
+        await tap(page, '[data-action="setCategoryFilter"][data-cat="ערב"][data-ctx="tracker"]');
+        await expect(page.locator('#habitsListContainer')).toContainText('אין הרגלים בקטגוריה „ערב”');
+        await tap(page, '#habitsListContainer [data-action="setCategoryFilter"][data-cat="הכל"]');
+        await expect(page.locator('[data-action="toggleDay"]')).toHaveCount(9);
+        expect(errors).toEqual([]);
+        await context.close();
+    });
+});
+
 test.describe('the single-file build opened from disk', () => {
     test('shows, and keeps byte for byte, the data the original file saved', async ({ browser }) => {
         // one context: like one browser, where every file:// page shares localStorage
