@@ -29,16 +29,20 @@ test.describe('the multi-file build (vite preview)', () => {
         await app.page.reload();
         await settle(app.page, 1500);
         await expect(app.page.locator('#daySelectorStrip button')).toHaveCount(7);
-        await expect(app.page.locator('[data-action="toggleDay"]')).toHaveCount(5);
+        // the sample habits: meditation is done twice a day, so it has two marks
+        await expect(app.page.locator('[data-action="toggleDay"]')).toHaveCount(9);
         await expect(app.page.locator('#greetingLabel')).toHaveText('בוקר טוב');
         expect(requests.some(u => u.includes('cdn.tailwindcss.com'))).toBe(false);
         expect(app.errors).toEqual([]);
         await app.context.close();
     });
 
-    test('checking a habit off completes the day, and undo restores a cleared day', async ({ browser }) => {
+    test('checking the last habits off completes the day, and undo restores a cleared day', async ({ browser }) => {
         const { context, page, errors } = await openApp(browser, PREVIEW_URL);
-        await tap(page, '[data-action="toggleDay"][data-id="h5"]');
+        // left for today in the sample data: deep work, reading, and the evening meditation
+        await tap(page, '[data-action="toggleDay"][data-id="h7"]');
+        await tap(page, '[data-action="toggleDay"][data-id="h4"]');
+        await tap(page, '[data-action="toggleDay"][data-id="h5"][data-slot="1"]');
         await expect(page.locator('#toastMessage')).toHaveText('כל היעדים להיום הושלמו. כל הכבוד!');
         expect((await stored(page)).find(h => h.id === 'h5').history['2026-10-21']).toBe(true);
         await tap(page, '[data-action="toggleMenu"][data-arg="trackerActionsMenu"]');
@@ -97,8 +101,8 @@ test.describe('the multi-file build (vite preview)', () => {
         const prefs = JSON.stringify({ currentMainSection: 'analytics' });
         const { context, page } = await openApp(browser, PREVIEW_URL, { storage: { [KEY.prefs]: prefs } });
         await expect(page.locator('#section_analytics')).toBeVisible();
-        await expect(page.locator('#section_tracker [data-action="toggleDay"]')).toHaveCount(5);
-        await expect(page.locator('#manageHabitsGrid [data-habit-card]')).toHaveCount(5);
+        await expect(page.locator('#section_tracker [data-action="toggleDay"]')).toHaveCount(9);
+        await expect(page.locator('#manageHabitsGrid [data-habit-card]')).toHaveCount(8);
         await context.close();
     });
 });

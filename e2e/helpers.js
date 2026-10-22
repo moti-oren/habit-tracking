@@ -84,6 +84,21 @@ export async function openApp(
 }
 
 /**
+ * The storage the ORIGINAL app writes on its first start (its sample habits and categories). The
+ * app's own sample data has moved on since, so side-by-side comparisons start both apps from this.
+ */
+export async function originalStartingStorage(browser) {
+    const context = await browser.newContext({ timezoneId: TIMEZONE });
+    const page = await context.newPage();
+    await freezeClock(page);
+    await page.goto(ORIGINAL_URL);
+    await settle(page, 2000);
+    const storage = await page.evaluate(() => ({ ...localStorage }));
+    await context.close();
+    return storage;
+}
+
+/**
  * Moves the fake clock by `ms` (timers, frames and idle callbacks run), waits a little real time
  * for what timers don't drive (smooth scrolling, fonts, the CDN's asynchronous CSS generation in
  * the original), then finishes every finite animation so a state can be compared.

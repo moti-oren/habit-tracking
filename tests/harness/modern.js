@@ -7,6 +7,8 @@ import { pathToFileURL } from 'node:url';
 import { vi } from 'vitest';
 import { ROOT } from './paths.js';
 
+const ORIGINAL_SAMPLE_HABITS = path.join(ROOT, 'tests/harness/original-sample-habits.js');
+
 const exists = m => fs.existsSync(path.join(ROOT, 'src', `${m}.js`));
 
 /** Every module under src/ except the entry point. */
@@ -31,5 +33,9 @@ export async function loadModern({ fresh = false, modules = [] } = {}) {
         const mod = await import(/* @vite-ignore */ pathToFileURL(path.join(ROOT, 'src', `${m}.js`)).href);
         Object.assign(api, mod);
     }
+    // Compared with the original, the refactored code starts from the original's sample habits
+    // (the app's own sample data has moved on and has its own tests).
+    const original = await import(/* @vite-ignore */ pathToFileURL(ORIGINAL_SAMPLE_HABITS).href);
+    api.getDefaultHabits = original.getDefaultHabits;
     return api;
 }

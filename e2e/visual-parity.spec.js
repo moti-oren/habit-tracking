@@ -10,6 +10,7 @@ import {
     collectStyles,
     comparePng,
     openApp,
+    originalStartingStorage,
     settle,
     styleDetails
 } from './helpers.js';
@@ -24,7 +25,9 @@ const VARIANTS = [
 
 for (const [vp, scheme] of VARIANTS) {
     test(`original vs refactored (${vp}, ${scheme})`, async ({ browser }) => {
-        const opts = { viewport: VIEWPORTS[vp], colorScheme: scheme };
+        // both start from the original's sample data (the app's own has moved on)
+        const storage = await originalStartingStorage(browser);
+        const opts = { viewport: VIEWPORTS[vp], colorScheme: scheme, storage };
         const original = await openApp(browser, ORIGINAL_URL, opts);
         const refactored = await openApp(browser, SINGLE_FILE_URL, opts);
         const failures = [];
