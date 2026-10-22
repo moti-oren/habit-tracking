@@ -8,6 +8,24 @@ could not be kept identical, and the bugs found but deliberately left alone.
 The plan that was approved before any code was written is in
 [docs/REFACTOR_PLAN.md](docs/REFACTOR_PLAN.md). This file supersedes it where they differ.
 
+## After the refactor
+
+The refactor is complete and verified at the git tag `refactor-verified`: there, every suite
+described below passes (check out the tag, `npm ci`, then `npm run verify` and `npm run test:e2e`).
+
+The app has been developed further since (an intro screen, new sample data, new empty states), so
+the suites that required the interface to stay identical to the original were retired from the
+regular runs: DOM parity, markup and CSS parity, the Tailwind class check, and visual parity in the
+browser. They are kept at the tag. Still running on every change:
+
+- the unit tests, against both the original and the refactored code;
+- logic parity on random data (the logic layers have not changed);
+- the browser smoke tests, including the single-file build taking over the original file's data.
+
+To compare like with like, the suites that still run the original give the refactored code the
+original's sample habits (`tests/harness/original-sample-habits.js`); the app's own sample data has
+its own tests.
+
 ## How parity was established
 
 1. **Characterization first.** Before any code moved, unit tests were written against the

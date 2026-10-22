@@ -7,5 +7,7 @@ playwright-report/
 package-lock.json
 # The reference, never reformatted
 legacy/
-# Markup must stay byte-identical to the original <body> (whitespace between inline elements renders)
+# Hand-formatted: whitespace between inline elements renders, so reformatting would change the page
 index.html
+# Local Claude Code settings, not part of the project
+.claude/

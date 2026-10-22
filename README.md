@@ -48,9 +48,8 @@ npm run dev
 | `npm run preview`                 | Serves `dist/`                                                   |
 | `npm run lint`                    | ESLint, including the import-layer rules below                   |
 | `npm run format` / `format:check` | Prettier                                                         |
-| `npm test`                        | Unit and parity tests (Vitest)                                   |
+| `npm test`                        | Unit tests and logic parity (Vitest)                             |
 | `npm run test:e2e`                | Browser tests (Playwright; needs internet, see below)            |
-| `npm run check:css`               | Every Tailwind rule the original generated is still generated    |
 | `npm run check:deps`              | No circular imports (madge)                                      |
 | `npm run verify`                  | All of the above except the browser tests, then both builds      |
 
@@ -83,12 +82,12 @@ src/
   styles/             custom CSS (tokens, base, components, animations, reduced motion), then Tailwind
 tests/
   unit/core, unit/store     unit tests, each run against the original AND the refactored code
-  parity/                   DOM parity, logic parity on random data, CSS and markup parity
-  harness/                  loads the original file and the refactored build side by side
-e2e/                  Playwright: visual parity with the original, smoke tests
-scripts/              the Tailwind class check, extraction of the CDN's prefix table
+  parity/                   logic parity with the original on random data
+  harness/                  loads the original file and the refactored modules side by side
+e2e/                  Playwright smoke tests of both builds
+scripts/              extraction of the CDN's prefix table
 build/                autoprefixer's prefix table of the Tailwind CDN the original used
-legacy/               the original single-file app (the reference for every parity test)
+legacy/               the original single-file app (the reference for the parity tests)
 ```
 
 ## The dependency rule
@@ -132,13 +131,12 @@ config → core → store → state → audio → ui → events → main
 
 - **Unit tests** (`tests/unit`) run every case against both the original file and the refactored
   modules, so they also prove that both behave the same.
-- **Parity tests** (`tests/parity`):
-  - The DOM parity test runs the original and the production build side by side in jsdom. It
-    replays 124 user steps in 6 scenarios and compares the DOM, storage, focus, console and
-    errors after every step.
-  - The logic parity test compares every statistic and label on seeded random (and damaged) data.
-  - Two more tests check that the markup and the CSS are the original's.
-- **Browser tests** (`e2e/`) compare the single-file build with the original file in Chromium.
-  Through 23 states, at desktop and phone width, in light and dark mode, every element's computed
-  style and the screenshots must match. Smoke tests cover the main flows on the hosted build. The
-  original loads Tailwind from its CDN, so these tests need internet.
+- **Logic parity** (`tests/parity`) compares every statistic and label with the original's on
+  seeded random (and damaged) data.
+- **Browser tests** (`e2e/`) cover the main flows on both builds, the intro screen, and the
+  single-file build taking over the data the original file saved. They need internet (Google Fonts,
+  and the original's Tailwind CDN).
+- **The refactor itself** was verified by stricter suites that required the interface to stay
+  identical to the original: DOM, markup and CSS parity, and pixel-level visual parity in the
+  browser. The app has moved on since, so they live at the `refactor-verified` tag; see
+  [REFACTOR_NOTES.md](REFACTOR_NOTES.md).

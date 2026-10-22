@@ -4,7 +4,6 @@ dist-single/
 coverage/
 test-results/
 playwright-report/
-e2e/.artifacts/
 .vite/
 *.log
 .DS_Store

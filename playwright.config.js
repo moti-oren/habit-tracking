@@ -1,10 +1,11 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// End-to-end tests run against the production builds:
-// - the single-file build (dist-single/, opened from file:// like the original), compared with the
-//   original file side by side (e2e/visual-parity.spec.js);
-// - the multi-file build served by `vite preview` (e2e/smoke.spec.js).
+// End-to-end tests (e2e/smoke.spec.js) run against the production builds:
+// - the multi-file build served by `vite preview`;
+// - the single-file build (dist-single/, opened from file:// like the original), which must take
+//   over the data the original file saved.
 // The original loads Tailwind from its CDN and both load Google Fonts, so these tests need internet.
+// (The side-by-side visual comparison with the original lives at the `refactor-verified` tag.)
 export default defineConfig({
     testDir: 'e2e',
     timeout: 10 * 60 * 1000,

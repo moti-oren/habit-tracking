@@ -1,15 +1,11 @@
 // Shared helpers for the end-to-end tests.
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { PNG } from 'pngjs';
-import pixelmatch from 'pixelmatch';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const ORIGINAL_URL = pathToFileURL(path.join(ROOT, 'legacy/habit_tracker_dashboard.html')).href;
 export const SINGLE_FILE_URL = pathToFileURL(path.join(ROOT, 'dist-single/habit_tracker_dashboard.html')).href;
 export const PREVIEW_URL = 'http://localhost:4173/';
-export const ARTIFACTS = path.join(ROOT, 'e2e/.artifacts');
 export const INTRO_SEEN_KEY = 'habit_tracker_intro_seen_v1';
 
 /** Wednesday 21 Oct 2026, 10:00 in Israel (the time zone of every context). */
@@ -84,21 +80,6 @@ export async function openApp(
 }
 
 /**
- * The storage the ORIGINAL app writes on its first start (its sample habits and categories). The
- * app's own sample data has moved on since, so side-by-side comparisons start both apps from this.
- */
-export async function originalStartingStorage(browser) {
-    const context = await browser.newContext({ timezoneId: TIMEZONE });
-    const page = await context.newPage();
-    await freezeClock(page);
-    await page.goto(ORIGINAL_URL);
-    await settle(page, 2000);
-    const storage = await page.evaluate(() => ({ ...localStorage }));
-    await context.close();
-    return storage;
-}
-
-/**
  * Moves the fake clock by `ms` (timers, frames and idle callbacks run), waits a little real time
  * for what timers don't drive (smooth scrolling, fonts, the CDN's asynchronous CSS generation in
  * the original), then finishes every finite animation so a state can be compared.
@@ -148,83 +129,4 @@ export async function press(page, key) {
 export async function pick(page, value) {
     await page.locator('[role="listbox"]').last().locator(`[data-value="${value}"]`).dispatchEvent('click');
     await settle(page);
-}
-
-/**
- * A fingerprint of the computed style of every element of <html> and <body> (scripts excluded),
- * plus ::before, ::after and ::placeholder. Element paths count only non-script children, so the
- * original's inline <script> at the end of <body> doesn't shift what follows.
- */
-export function collectStyles(page) {
-    return page.evaluate(() => {
-        const props = [...getComputedStyle(document.documentElement)].filter(p => !p.startsWith('--'));
-        const hash = s => {
-            let h = 0x811c9dc5;
-            for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
-            return (h >>> 0).toString(36);
-        };
-        const styleOf = (el, pseudo) => {
-            const cs = getComputedStyle(el, pseudo);
-            return props.map(p => cs.getPropertyValue(p)).join('\u0001');
-        };
-        const out = [];
-        const walk = (el, p) => {
-            let s = styleOf(el);
-            for (const pseudo of ['::before', '::after']) {
-                const c = getComputedStyle(el, pseudo).content;
-                if (c !== 'none' && c !== 'normal') s += `\u0002${pseudo}${styleOf(el, pseudo)}`;
-            }
-            if (el.matches('input, textarea')) s += `\u0003${styleOf(el, '::placeholder')}`;
-            out.push([p, el.tagName.toLowerCase(), hash(s), el.id || [...el.classList].slice(0, 4).join('.')]);
-            [...el.children]
-                .filter(c => c.tagName !== 'SCRIPT' && c.tagName !== 'HEAD')
-                .forEach((c, i) => walk(c, `${p}/${i}`));
-        };
-        walk(document.documentElement, '');
-        return out;
-    });
-}
-
-/** Property-by-property differences of one element (by path) between two pages. */
-export async function styleDetails(page, elPath) {
-    return page.evaluate(p => {
-        const props = [...getComputedStyle(document.documentElement)].filter(x => !x.startsWith('--'));
-        let el = document.documentElement;
-        for (const i of p.split('/').filter(Boolean).map(Number)) {
-            el = [...el.children].filter(c => c.tagName !== 'SCRIPT' && c.tagName !== 'HEAD')[i];
-        }
-        const read = pseudo => {
-            const cs = getComputedStyle(el, pseudo);
-            return Object.fromEntries(props.map(x => [x, cs.getPropertyValue(x)]));
-        };
-        return {
-            desc: `${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''}.${[...el.classList].join('.')}`,
-            self: read(),
-            before: read('::before'),
-            after: read('::after'),
-            placeholder: el.matches('input, textarea') ? read('::placeholder') : {}
-        };
-    }, elPath);
-}
-
-/** Compares two PNG screenshots; writes a diff image when they differ. Returns the differing pixel count. */
-export function comparePng(aBuf, bBuf, name) {
-    const a = PNG.sync.read(aBuf);
-    const b = PNG.sync.read(bBuf);
-    if (a.width !== b.width || a.height !== b.height) {
-        fs.mkdirSync(ARTIFACTS, { recursive: true });
-        fs.writeFileSync(path.join(ARTIFACTS, `${name}-original.png`), aBuf);
-        fs.writeFileSync(path.join(ARTIFACTS, `${name}-refactored.png`), bBuf);
-        return { diff: Infinity, size: `${a.width}x${a.height} vs ${b.width}x${b.height}` };
-    }
-    const out = new PNG({ width: a.width, height: a.height });
-    // pixelmatch's default colour threshold ignores 1-step anti-aliasing noise, not visible changes
-    const diff = pixelmatch(a.data, b.data, out.data, a.width, a.height, { threshold: 0.1 });
-    if (diff > 0) {
-        fs.mkdirSync(ARTIFACTS, { recursive: true });
-        fs.writeFileSync(path.join(ARTIFACTS, `${name}-original.png`), aBuf);
-        fs.writeFileSync(path.join(ARTIFACTS, `${name}-refactored.png`), bBuf);
-        fs.writeFileSync(path.join(ARTIFACTS, `${name}-diff.png`), PNG.sync.write(out));
-    }
-    return { diff, size: `${a.width}x${a.height}` };
 }
