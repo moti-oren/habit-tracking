@@ -1,13 +1,14 @@
 // Manage actions: open or select cards, archive, restore, delete, move between categories, reset.
 
 import { UNCATEGORIZED_LABEL } from '../../../config/categories.js';
-import { getDateKeyDaysAgo } from '../../../core/dates.js';
-import { habitCountLabel } from '../../../core/format.js';
+import { formatDateKey, getDateKeyDaysAgo } from '../../../core/dates.js';
+import { formatStartDateLabel, habitCountLabel } from '../../../core/format.js';
 import { isHabitArchived } from '../../../core/habit.js';
 import { manage } from '../../../state/manage.js';
 import { motion } from '../../../state/motion.js';
 import { setWeek, tracker } from '../../../state/tracker.js';
 import { createUndoSnapshot } from '../../../state/undo.js';
+import { backupFileName, createBackup, MAX_BACKUP_BYTES, parseBackup } from '../../../store/backup.js';
 import { getDefaultHabits } from '../../../store/sample-habits.js';
 import { Store } from '../../../store/store.js';
 import { renderAll } from '../../app/render.js';
@@ -212,6 +213,73 @@ export function loadSampleData(message = 'נתוני הדוגמה שוחזרו')
     Store.resetToDefaults(getDefaultHabits);
     showToast(message);
     renderAll();
+}
+
+// ---- backup: export to a JSON file, import from one ----
+
+export function exportBackup() {
+    closeAllMenus();
+    const text = createBackup(Store.snapshot());
+    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = backupFileName();
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast(`הגיבוי נשמר: ${habitCountLabel(Store.habits.length)}`);
+}
+
+export function importBackup() {
+    closeAllMenus();
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.addEventListener('change', async () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        if (file.size > MAX_BACKUP_BYTES) {
+            showToast('הקובץ גדול מדי בשביל גיבוי של האפליקציה.');
+            return;
+        }
+        let text;
+        try {
+            text = await file.text();
+        } catch {
+            showToast('לא ניתן לקרוא את הקובץ.');
+            return;
+        }
+        const backup = parseBackup(text);
+        if (!backup.ok) {
+            showToast(backup.error);
+            return;
+        }
+        const { habits, marks } = backup.summary;
+        const from = backup.exportedAt ? ` מ-${formatStartDateLabel(formatDateKey(new Date(backup.exportedAt)))}` : '';
+        openConfirmModal(
+            'ייבוא מגיבוי?',
+            `בגיבוי${from}: ${habitCountLabel(habits)} ו-${marks} סימונים. הם יחליפו את כל ההרגלים והקטגוריות שכאן. אפשר לבטל מיד אחרי הייבוא.`,
+            () => applyBackup(backup),
+            { confirmLabel: 'ייבוא' }
+        );
+    });
+    input.click();
+}
+
+function applyBackup(backup) {
+    const undoSnapshot = createUndoSnapshot();
+    const todayKey = getDateKeyDaysAgo(0);
+    setWeek(0);
+    tracker.selectedCategory = 'הכל';
+    manage.selectedCategory = 'הכל';
+    tracker.selectedDateKey = todayKey;
+    // without a list (a bare array of habits), the habits' own categories are kept
+    Store.restore({ habits: backup.habits, categories: backup.categories || [] });
+    // marks after today (a backup from another time zone or a wrong clock) are dropped, as on load
+    Store.stripFuture(todayKey);
+    renderAll();
+    showToast(`הגיבוי יובא: ${habitCountLabel(Store.habits.length)}`, undoSnapshot);
 }
 
 export function openResetModal() {

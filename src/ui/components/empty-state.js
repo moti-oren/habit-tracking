@@ -44,7 +44,10 @@ export function emptyStateHtml({ icon, title, text, actions = [], className = ''
         </div>`;
 }
 
-/** The first run, when there are no habits at all: start from scratch, or look around first. */
+/**
+ * The first run, when there are no habits at all: start from scratch, look around first, or bring
+ * the data over from a backup (a new device or browser starts here too).
+ */
 export function firstRunHtml(className = '') {
     return emptyStateHtml({
         icon: 'sparkles',
@@ -52,7 +55,8 @@ export function firstRunHtml(className = '') {
         text: 'הוסיפו את ההרגל הראשון שלכם, או טענו נתוני דוגמה כדי לראות איך האפליקציה נראית אחרי כמה חודשים של שימוש.',
         actions: [
             { label: '+ הרגל ראשון', action: 'newHabit', primary: true },
-            { label: 'טעינת נתוני דוגמה', action: 'loadSampleData' }
+            { label: 'טעינת נתוני דוגמה', action: 'loadSampleData' },
+            { label: 'שחזור מגיבוי', action: 'importBackup' }
         ],
         className
     });

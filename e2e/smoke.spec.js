@@ -139,6 +139,74 @@ test.describe('empty states', () => {
     });
 });
 
+test.describe('backup', () => {
+    const openManageMenu = page => tap(page, '[data-action="toggleMenu"][data-arg="manageHeaderMenu"]');
+
+    test('an exported backup restores everything in a new browser, and the import can be undone', async ({
+        browser
+    }) => {
+        // export: some use first, so the backup is not just the sample data
+        const first = await openApp(browser, PREVIEW_URL);
+        await tap(first.page, '[data-action="toggleDay"][data-id="h4"]');
+        await tap(first.page, '[data-action="switchSection"][data-arg="manage"]');
+        await openManageMenu(first.page);
+        const [download] = await Promise.all([
+            first.page.waitForEvent('download'),
+            first.page.locator('[data-action="exportBackup"]').click()
+        ]);
+        expect(download.suggestedFilename()).toBe('habit-tracker-backup-2026-10-21.json');
+        const file = await download.path();
+        const saved = await stored(first.page);
+        const savedCategories = await stored(first.page, KEY.categories);
+        await expect(first.page.locator('#toastMessage')).toHaveText('הגיבוי נשמר: 9 הרגלים');
+        expect(first.errors).toEqual([]);
+
+        // a new browser with no data: the first-run screen offers the backup
+        const second = await openApp(browser, PREVIEW_URL, { storage: { [KEY.habits]: '[]' } });
+        const [chooser] = await Promise.all([
+            second.page.waitForEvent('filechooser'),
+            second.page.locator('#habitsListContainer [data-action="importBackup"]').click()
+        ]);
+        await chooser.setFiles(file);
+        await settle(second.page);
+        await expect(second.page.locator('#confirmModalText')).toContainText('9 הרגלים');
+        await tap(second.page, '#confirmModalActionBtn');
+        await expect(second.page.locator('#toastMessage')).toHaveText('הגיבוי יובא: 9 הרגלים');
+        expect(await stored(second.page)).toEqual(saved);
+        expect(await stored(second.page, KEY.categories)).toEqual(savedCategories);
+        await expect(second.page.locator('[data-action="toggleDay"][data-id="h4"]')).toHaveAttribute(
+            'aria-pressed',
+            'true'
+        );
+
+        // changed their mind: undo brings the empty app back
+        await tap(second.page, '#toastUndoBtn');
+        expect(await stored(second.page)).toEqual([]);
+        await expect(second.page.locator('#habitsListContainer')).toContainText('בואו נתחיל לבנות הרגלים');
+        expect(second.errors).toEqual([]);
+        await first.context.close();
+        await second.context.close();
+    });
+
+    test('a file that is not a backup is refused, and nothing changes', async ({ browser }) => {
+        const { context, page, errors } = await openApp(browser, PREVIEW_URL);
+        const before = await stored(page);
+        await tap(page, '[data-action="switchSection"][data-arg="manage"]');
+        await openManageMenu(page);
+        const [chooser] = await Promise.all([
+            page.waitForEvent('filechooser'),
+            page.locator('[data-action="importBackup"]').click()
+        ]);
+        await chooser.setFiles({ name: 'notes.json', mimeType: 'application/json', buffer: Buffer.from('{"a":1}') });
+        await settle(page);
+        await expect(page.locator('#toastMessage')).toHaveText('זה לא קובץ גיבוי של מעקב ההרגלים.');
+        await expect(page.locator('#confirmModalBackdrop')).toBeHidden();
+        expect(await stored(page)).toEqual(before);
+        expect(errors).toEqual([]);
+        await context.close();
+    });
+});
+
 test.describe('the single-file build opened from disk', () => {
     test('shows, and keeps byte for byte, the data the original file saved', async ({ browser }) => {
         // one context: like one browser, where every file:// page shares localStorage
