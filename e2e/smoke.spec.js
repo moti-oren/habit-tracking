@@ -235,10 +235,7 @@ test.describe('the single-file build opened from disk', () => {
         // the new file, in place of the old one
         await page.goto(SINGLE_FILE_URL);
         await settle(page, 2000);
-        // the intro is new to someone who used the original: shown once, and skipping it changes no data
-        await expect(page.locator('#intro')).toBeVisible();
-        await press(page, 'Escape');
-        await settle(page, 1000);
+        // the intro screen is switched off: someone who used the original goes straight to their data
         await expect(page.locator('#intro')).toHaveCount(0);
         const after = await page.evaluate(() => ({ ...localStorage }));
         expect(after[KEY.habits]).toBe(saved[KEY.habits]);
@@ -292,8 +289,8 @@ test.describe('the intro screen', () => {
         expect(await page.evaluate(() => document.querySelector('header').closest('[inert]'))).toBeNull();
         expect(await page.evaluate(k => localStorage.getItem(k), INTRO_SEEN_KEY)).toBe('1');
 
-        // remembered: a reload goes straight to the app, and ?intro shows it again
-        await page.reload();
+        // it opens only when asked: the plain address goes straight to the app, ?intro shows it again
+        await page.goto(PREVIEW_URL);
         await settle(page, 1500);
         expect(await introOpen(page)).toBe(false);
         await page.goto(`${PREVIEW_URL}?intro`);

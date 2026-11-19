@@ -44,7 +44,8 @@ export async function openApp(
         isMobile: viewport.width < 768,
         hasTouch: false
     });
-    // The intro screen (new, the original has none) is skipped unless a test is about it.
+    // The intro screen (new, the original has none) is opened with `?intro` by the tests about it,
+    // and marked as seen for the rest (in case it is ever switched on for first visits again).
     if (!intro) {
         await context.addInitScript(key => {
             if (!localStorage.getItem(key)) localStorage.setItem(key, '1');
@@ -69,7 +70,8 @@ export async function openApp(
     page.on('console', m => {
         if (m.type() === 'error') errors.push(`console.error: ${m.text()}`);
     });
-    await page.goto(url);
+    // the intro screen is off unless the address asks for it
+    await page.goto(intro ? `${url}?intro` : url);
     // boot: first render, idle-time prerender of the hidden sections, skeleton fade
     for (let i = 0; i < 40; i++) {
         await settle(page, 100);

@@ -1,12 +1,16 @@
 // The intro screen: before the app opens, the visitor completes a week by dragging a knob around a
 // ring (or with the keyboard), and the app is revealed behind it.
 //
-// It is shown once: completing or skipping it is remembered under INTRO_SEEN_KEY. `?intro` in the
-// URL shows it again. While it is open everything else on the page is inert, so focus and screen
-// readers stay inside it. Dragging only moves a transform and a stroke offset, once per frame.
+// It is currently switched off (SHOW_TO_FIRST_VISIT below): it opens only with `?intro` in the URL.
+// Switched on, it is shown once: completing or skipping it is remembered under INTRO_SEEN_KEY.
+// While it is open everything else on the page is inert, so focus and screen readers stay inside
+// it. Dragging only moves a transform and a stroke offset, once per frame.
 
 import { playFeedbackSound } from '../../audio/feedback.js';
 import { INTRO_SEEN_KEY } from '../../config/storage-keys.js';
+
+// The on/off switch: false = the intro only opens with `?intro` in the address.
+const SHOW_TO_FIRST_VISIT = false;
 
 const TAU = Math.PI * 2;
 const DAYS = 7;
@@ -95,10 +99,13 @@ function introHtml() {
     </div>`;
 }
 
-/** Shows the intro over the app, unless it was already seen (and `?intro` doesn't ask for it). */
+/**
+ * Shows the intro over the app, but only when `?intro` asks for it (handy for a demo): it is
+ * switched off for everyone else. Set SHOW_TO_FIRST_VISIT to show it once to every first visit.
+ */
 export function showIntro() {
     const forced = new URLSearchParams(location.search).has('intro');
-    if (!forced && wasSeen()) return;
+    if (!forced && (!SHOW_TO_FIRST_VISIT || wasSeen())) return;
 
     const root = document.createElement('div');
     root.id = 'intro';
