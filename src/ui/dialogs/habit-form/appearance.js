@@ -52,7 +52,7 @@ export function renderModalPickers() {
     }
     const panelOpen = !document.getElementById('customIconPanel').classList.contains('hidden');
     const plusTile = `
-            <button type="button" data-action="toggleCustomIcons" title="אייקון אחר" aria-label="בחירת אייקון אחר" aria-expanded="${panelOpen}" class="h-11 rounded-xl flex items-center justify-center border border-dashed transition ${
+            <button type="button" data-action="toggleCustomIcons" data-tip="אייקון אחר" aria-label="בחירת אייקון אחר" aria-expanded="${panelOpen}" class="h-11 rounded-xl flex items-center justify-center border border-dashed transition ${
                 panelOpen
                     ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400 bg-indigo-500/10'
                     : 'border-slate-300 dark:border-slate-600 text-slate-500 dark:text-slate-400 hover:border-indigo-400 hover:text-indigo-600'
@@ -63,7 +63,7 @@ export function renderModalPickers() {
             .map(item => {
                 const active = item.emoji === habitForm.icon;
                 return `
-            <button type="button" data-action="selectIcon" title="${escapeHtml(item.label)}" aria-label="אייקון: ${escapeHtml(item.label)}" aria-pressed="${active}" data-cell-pop="${active && motion.justPicked === 'icon' ? '1' : ''}" class="h-11 rounded-xl text-xl flex items-center justify-center border transition ${
+            <button type="button" data-action="selectIcon" data-tip="${escapeHtml(item.label)}" aria-label="אייקון: ${escapeHtml(item.label)}" aria-pressed="${active}" data-cell-pop="${active && motion.justPicked === 'icon' ? '1' : ''}" class="h-11 rounded-xl text-xl flex items-center justify-center border transition ${
                 active
                     ? 'border-indigo-500 bg-indigo-500/15 ring-2 ring-indigo-500/30'
                     : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-indigo-300 dark:hover:border-indigo-700'
@@ -81,7 +81,7 @@ export function renderModalPickers() {
         COLOR_OPTIONS.map(c => {
             const active = c.id === habitForm.color;
             return `
-            <button type="button" data-action="selectColor" data-arg="${c.id}" title="${c.name}" aria-label="צבע ${c.name}" aria-pressed="${active}" data-cell-pop="${active && motion.justPicked === 'color' ? '1' : ''}" class="tap-44 w-10 h-10 shrink-0 rounded-full ${c.bg} flex items-center justify-center text-white text-sm font-bold transition ${
+            <button type="button" data-action="selectColor" data-arg="${c.id}" data-tip="${c.name}" aria-label="צבע ${c.name}" aria-pressed="${active}" data-cell-pop="${active && motion.justPicked === 'color' ? '1' : ''}" class="tap-44 w-10 h-10 shrink-0 rounded-full ${c.bg} flex items-center justify-center text-white text-sm font-bold transition ${
                 active
                     ? 'ring-2 ring-offset-2 ring-indigo-500 dark:ring-offset-slate-900'
                     : 'opacity-75 hover:opacity-100'

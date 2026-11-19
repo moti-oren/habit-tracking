@@ -60,7 +60,7 @@ export function buildHabitFocusCardHtml(habit, selectedDayObj, isSelectedDayFutu
             const isDayFlexible = isFlexibleOnKey(habit, d.key);
             const isBeforeStart = !isHabitActiveOnKey(habit, d.key);
             return `
-            <div title="${d.dayFull}${isBeforeStart ? ' (לפני תחילת ההרגל)' : isDayFuture ? ' (תאריך עתידי — טרם הגיע)' : isDayFlexible ? ' (גמיש השבוע)' : isDayScheduled ? ' (מתוכנן)' : ' (יום חופשי)'}" class="flex flex-col items-center gap-0.5 p-1 rounded-lg select-none pointer-events-none ${isDayFuture || isBeforeStart ? 'opacity-30' : !isDayScheduled && !isDayFlexible && !checked ? 'opacity-40' : ''}">
+            <div data-tip="${d.dayFull}${isBeforeStart ? ' (לפני תחילת ההרגל)' : isDayFuture ? ' (תאריך עתידי — טרם הגיע)' : isDayFlexible ? ' (גמיש השבוע)' : isDayScheduled ? ' (מתוכנן)' : ' (יום חופשי)'}" class="flex flex-col items-center gap-0.5 p-1 rounded-lg select-none pointer-events-none ${isDayFuture || isBeforeStart ? 'opacity-30' : !isDayScheduled && !isDayFlexible && !checked ? 'opacity-40' : ''}">
                 <span class="text-xs font-semibold ${isCurrent ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 dark:text-slate-400'}">${d.dayLetter}</span>
                 <span class="w-2.5 h-2.5 rounded-full transition-all ${
                     isDayFuture || isBeforeStart
@@ -82,7 +82,7 @@ export function buildHabitFocusCardHtml(habit, selectedDayObj, isSelectedDayFutu
         }">
             <div class="flex items-start gap-3.5">
                 <!-- Large Touch Checkbox Button -->
-                <button type="button" ${isSelectedDayFuture ? 'disabled' : `data-action="toggleDay" data-id="${escapeHtml(habit.id)}" data-key="${tracker.selectedDateKey}"${slotAttr}`} title="${isSelectedDayFuture ? 'לא ניתן לסמן הרגלים בתאריך עתידי' : ''}" aria-label="סמן את ${escapeHtml(habit.name)}${isSlot ? `, פעם ${habit._slot + 1} מתוך ${habit._slots}` : ''}" aria-pressed="${isDoneSelectedDay ? 'true' : 'false'}" class="w-12 h-12 shrink-0 rounded-xl flex items-center justify-center text-xl transition-all ${
+                <button type="button" ${isSelectedDayFuture ? 'disabled' : `data-action="toggleDay" data-id="${escapeHtml(habit.id)}" data-key="${tracker.selectedDateKey}"${slotAttr}`} data-tip="${isSelectedDayFuture ? 'לא ניתן לסמן הרגלים בתאריך עתידי' : ''}" aria-label="סמן את ${escapeHtml(habit.name)}${isSlot ? `, פעם ${habit._slot + 1} מתוך ${habit._slots}` : ''}" aria-pressed="${isDoneSelectedDay ? 'true' : 'false'}" class="w-12 h-12 shrink-0 rounded-xl flex items-center justify-center text-xl transition-all ${
                     isSelectedDayFuture
                         ? 'bg-slate-100 dark:bg-slate-800/70 text-slate-400 border border-dashed border-slate-300 dark:border-slate-700 cursor-not-allowed pointer-events-none opacity-60'
                         : isDoneSelectedDay
@@ -121,7 +121,7 @@ export function buildHabitFocusCardHtml(habit, selectedDayObj, isSelectedDayFutu
                 <div class="flex items-center gap-0.5">
                     ${miniPips}
                 </div>
-                <span title="יעד שבועי" class="shrink-0 text-xs font-semibold ${weeklyGoal > 0 && weeklyCount >= weeklyGoal ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}">
+                <span data-tip="יעד שבועי" class="shrink-0 text-xs font-semibold ${weeklyGoal > 0 && weeklyCount >= weeklyGoal ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-500 dark:text-slate-400'}">
                     <span class="inline-flex items-center gap-1 ${justToggled ? (justToggled.on ? 'count-up' : 'count-down') : ''}">${weeklyGoal > 0 && weeklyCount >= weeklyGoal ? icon('check', 'w-3.5 h-3.5') : ''}${weeklyCount}/${weeklyGoal} השבוע</span>
                 </span>
             </div>

@@ -12,7 +12,10 @@ export function initTooltips() {
 
     function show(target) {
         const text = target.getAttribute('data-tip');
-        if (!text) return;
+        if (!text) {
+            hide(); // an empty data-tip means "no tip here", even mid-glide from a neighbour
+            return;
+        }
         current = target;
         const r = target.getBoundingClientRect(); // read (layout is clean here)
         const vw = window.innerWidth;

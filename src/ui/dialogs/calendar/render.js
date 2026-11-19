@@ -132,7 +132,7 @@ function renderCalendarYearView() {
             }">
                 <div class="flex items-center justify-between gap-1 mb-1.5">
                     <span class="text-sm sm:text-base font-bold ${isCurrentMonth ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-900 dark:text-white'}">${HEBREW_MONTHS_FULL[m]}</span>
-                    ${perfectInMonth > 0 ? `<span class="inline-flex items-center gap-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 whitespace-nowrap" title="ימים מושלמים">${icon('star', 'w-3.5 h-3.5', 2)} ${perfectInMonth}</span>` : ''}
+                    ${perfectInMonth > 0 ? `<span class="inline-flex items-center gap-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 whitespace-nowrap" data-tip="ימים מושלמים">${icon('star', 'w-3.5 h-3.5', 2)} ${perfectInMonth}</span>` : ''}
                 </div>
                 <div class="grid grid-cols-7 gap-0.5 text-center">
                     ${weekdayLetters.map(l => `<span class="text-[11px] sm:text-xs font-semibold text-slate-500 dark:text-slate-400 pb-0.5">${l}</span>`).join('')}

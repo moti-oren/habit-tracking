@@ -23,7 +23,7 @@ export function renderWeekView(container, filtered) {
             const isSelected = d.key === tracker.selectedDateKey;
             return `
             <th scope="col" ${isSelected ? 'aria-current="date"' : ''} class="p-1 text-center ${isSelected ? 'bg-indigo-50/80 dark:bg-indigo-950/40' : ''}">
-                <button type="button" ${d.isFuture ? 'disabled' : `data-action="selectDay" data-key="${d.key}"`} title="${d.isFuture ? 'תאריך עתידי — לא ניתן לבחור' : `בחירת ${d.dayFull}`}" aria-pressed="${isSelected}" class="w-full min-h-[44px] py-1.5 px-1 rounded-lg transition ${
+                <button type="button" ${d.isFuture ? 'disabled' : `data-action="selectDay" data-key="${d.key}"`} data-tip="${d.isFuture ? 'תאריך עתידי — לא ניתן לבחור' : `בחירת ${d.dayFull}`}" aria-pressed="${isSelected}" class="w-full min-h-[44px] py-1.5 px-1 rounded-lg transition ${
                     d.isFuture
                         ? 'text-slate-400 dark:text-slate-600 opacity-60 cursor-not-allowed'
                         : isSelected
@@ -57,13 +57,13 @@ export function renderWeekView(container, filtered) {
                     if (isBeforeStart) {
                         return `
                 <td class="p-2 text-center ${isSelected ? 'bg-indigo-50/30 dark:bg-indigo-950/20' : ''}">
-                    <span title="לפני תחילת ההרגל (${formatStartDateLabel(habit.startDate)})" class="w-10 h-10 mx-auto rounded-xl flex items-center justify-center text-slate-300 dark:text-slate-700 select-none">·</span>
+                    <span data-tip="לפני תחילת ההרגל (${formatStartDateLabel(habit.startDate)})" class="w-10 h-10 mx-auto rounded-xl flex items-center justify-center text-slate-300 dark:text-slate-700 select-none">·</span>
                 </td>
                 `;
                     }
                     return `
                 <td class="p-2 text-center ${isSelected ? 'bg-indigo-50/30 dark:bg-indigo-950/20' : ''}">
-                    <button type="button" ${isDayFuture ? 'disabled' : `data-action="toggleDay" data-id="${escapeHtml(habit.id)}" data-key="${d.key}"`} data-cell-pop="${motion.lastToggle && motion.lastToggle.on && motion.lastToggle.id === habit.id && motion.lastToggle.key === d.key ? '1' : ''}" title="${isDayFuture ? 'תאריך עתידי - לא ניתן לסמן' : isDayFlexible ? 'גמיש השבוע' : isDayScheduled ? 'יום מתוכנן' : 'יום מנוחה'}" aria-label="סמן ${escapeHtml(habit.name)} ב${d.dayFull}" class="w-10 h-10 mx-auto rounded-xl border flex items-center justify-center transition ${
+                    <button type="button" ${isDayFuture ? 'disabled' : `data-action="toggleDay" data-id="${escapeHtml(habit.id)}" data-key="${d.key}"`} data-cell-pop="${motion.lastToggle && motion.lastToggle.on && motion.lastToggle.id === habit.id && motion.lastToggle.key === d.key ? '1' : ''}" data-tip="${isDayFuture ? 'תאריך עתידי - לא ניתן לסמן' : isDayFlexible ? 'גמיש השבוע' : isDayScheduled ? 'יום מתוכנן' : 'יום מנוחה'}" aria-label="סמן ${escapeHtml(habit.name)} ב${d.dayFull}" class="w-10 h-10 mx-auto rounded-xl border flex items-center justify-center transition ${
                         isDayFuture
                             ? 'bg-transparent border-transparent cursor-not-allowed pointer-events-none'
                             : checked
@@ -122,7 +122,7 @@ export function renderWeekView(container, filtered) {
                     const isSelected = d.key === tracker.selectedDateKey;
                     if (!isHabitActiveOnKey(habit, d.key)) {
                         return `
-                <span title="לפני תחילת ההרגל" class="flex flex-col items-center py-2 rounded-xl border border-transparent text-slate-300 dark:text-slate-700 select-none">
+                <span data-tip="לפני תחילת ההרגל" class="flex flex-col items-center py-2 rounded-xl border border-transparent text-slate-300 dark:text-slate-700 select-none">
                     <span class="text-xs font-semibold">${d.dayLetter}</span>
                     <span class="text-xs font-semibold mt-0.5">·</span>
                 </span>

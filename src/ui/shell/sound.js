@@ -13,7 +13,7 @@ export function applySoundUI(enabled) {
             'aria-label',
             app.soundEnabled ? 'צלילי משוב פעילים. השתקה' : 'צלילי משוב מושתקים. הפעלה'
         );
-        soundBtn.title = app.soundEnabled ? 'השתקת צלילים' : 'הפעלת צלילים';
+        soundBtn.dataset.tip = app.soundEnabled ? 'השתקת צלילים' : 'הפעלת צלילים';
     }
     const container = document.getElementById('soundIconContainer');
     if (container) {

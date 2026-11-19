@@ -149,7 +149,7 @@ export function renderManageSection() {
                     <div class="flex flex-col items-center shrink-0 -mt-1 -ml-1">
                     <!-- Overflow menu: edit / archive / delete -->
                     <div class="relative">
-                        <button type="button" data-action="toggleMenu" data-arg="${menuId}" aria-haspopup="menu" aria-expanded="false" aria-label="פעולות עבור ${escapeHtml(habit.name)}" title="פעולות" class="tap-44 w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition">
+                        <button type="button" data-action="toggleMenu" data-arg="${menuId}" aria-haspopup="menu" aria-expanded="false" aria-label="פעולות עבור ${escapeHtml(habit.name)}" data-tip="פעולות" class="tap-44 w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition">
                             <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
                         </button>
                         <div id="${menuId}" data-menu-panel role="menu" data-stop-propagation class="hidden absolute top-full mt-1.5 left-0 z-30 min-w-[12rem] p-1 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg">
@@ -167,7 +167,7 @@ export function renderManageSection() {
 
                 <!-- Scheduled Days & Stats -->
                 <div class="pt-3 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
-                    <div class="flex items-center gap-1" title="ימי פעילות בשבוע">
+                    <div class="flex items-center gap-1" data-tip="ימי פעילות בשבוע">
                         ${daysBadges}
                     </div>
                     <div class="text-xs text-slate-500 dark:text-slate-400">

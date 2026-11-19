@@ -141,14 +141,14 @@
                 <!-- Left Side: Utility Controls -->
                 <div class="flex items-center gap-2">
                     <!-- Sound Toggle -->
-                    <button id="soundToggleBtn" data-action="toggleSound" title="הפעלה או השתקת צלילים" aria-label="הפעלה או השתקת צלילים" class="tap-44 w-10 h-10 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition shadow-sm">
+                    <button id="soundToggleBtn" data-action="toggleSound" data-tip="הפעלה או השתקת צלילים" aria-label="הפעלה או השתקת צלילים" class="tap-44 w-10 h-10 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition shadow-sm">
                         <span id="soundIconContainer" class="text-indigo-600 dark:text-indigo-400">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/></svg>
                         </span>
                     </button>
 
                     <!-- Theme Toggle -->
-                    <button id="themeToggleBtn" data-action="toggleTheme" title="החלפת ערכת נושא" aria-label="החלפת ערכת נושא" class="tap-44 w-10 h-10 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition shadow-sm">
+                    <button id="themeToggleBtn" data-action="toggleTheme" data-tip="החלפת ערכת נושא" aria-label="החלפת ערכת נושא" class="tap-44 w-10 h-10 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition shadow-sm">
                         <span id="themeIconContainer" class="text-amber-400">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
                         </span>
@@ -168,14 +168,14 @@
                 <!-- Date navigator: one component for week, day and calendar -->
                 <section id="dateNavigator" aria-label="בחירת יום לדיווח" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-3 sm:p-4 space-y-3">
                     <div class="flex items-center justify-between gap-2">
-                        <button type="button" data-action="openCalendar" aria-haspopup="dialog" title="פתיחת לוח השנה המלא" class="tap-44 h-10 min-w-0 px-2 -mr-1 rounded-xl text-sm sm:text-base font-bold text-slate-900 dark:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-2">
+                        <button type="button" data-action="openCalendar" aria-haspopup="dialog" data-tip="פתיחת לוח השנה המלא" class="tap-44 h-10 min-w-0 px-2 -mr-1 rounded-xl text-sm sm:text-base font-bold text-slate-900 dark:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition flex items-center gap-2">
                             <svg class="w-5 h-5 shrink-0 text-indigo-600 dark:text-indigo-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
                             <span id="weekRangeLabel" class="truncate">השבוע הנוכחי</span>
                             <svg class="w-4 h-4 shrink-0 text-slate-500 dark:text-slate-400" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
                         </button>
                         <div class="flex items-center gap-1 shrink-0">
-                            <button type="button" data-action="shiftWeek" data-arg="-1" aria-label="שבוע קודם" title="שבוע קודם" class="nudge-prev tap-44 w-10 h-10 rounded-xl flex items-center justify-center text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg></button>
-                            <button type="button" id="nextWeekBtn" data-action="shiftWeek" data-arg="1" aria-label="שבוע הבא" title="שבוע הבא" class="nudge-next tap-44 w-10 h-10 rounded-xl flex items-center justify-center text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition disabled:opacity-30 disabled:pointer-events-none"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg></button>
+                            <button type="button" data-action="shiftWeek" data-arg="-1" aria-label="שבוע קודם" data-tip="שבוע קודם" class="nudge-prev tap-44 w-10 h-10 rounded-xl flex items-center justify-center text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg></button>
+                            <button type="button" id="nextWeekBtn" data-action="shiftWeek" data-arg="1" aria-label="שבוע הבא" data-tip="שבוע הבא" class="nudge-next tap-44 w-10 h-10 rounded-xl flex items-center justify-center text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition disabled:opacity-30 disabled:pointer-events-none"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg></button>
                         </div>
                     </div>
 
@@ -222,7 +222,7 @@
 
                             <!-- Overflow menu: mark all / clear -->
                             <div class="relative">
-                                <button type="button" data-action="toggleMenu" data-arg="trackerActionsMenu" aria-haspopup="menu" aria-expanded="false" aria-label="פעולות נוספות" title="פעולות נוספות" class="tap-44 w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition">
+                                <button type="button" data-action="toggleMenu" data-arg="trackerActionsMenu" aria-haspopup="menu" aria-expanded="false" aria-label="פעולות נוספות" data-tip="פעולות נוספות" class="tap-44 w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition">
                                     <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
                                 </button>
                                 <div id="trackerActionsMenu" data-menu-panel role="menu" class="hidden absolute top-full mt-1.5 left-0 z-30 min-w-[12rem] p-1 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg">
@@ -268,11 +268,11 @@
                         <div class="w-full sm:w-auto flex flex-wrap items-center justify-between sm:justify-start gap-x-3 gap-y-3">
                             <!-- Prev / current range / next: plain text with quiet arrows -->
                             <div class="w-full sm:w-auto flex items-center justify-between">
-                                <button type="button" data-action="shiftRange" data-arg="-1" aria-label="טווח קודם" title="טווח קודם" class="nudge-prev tap-44 w-10 h-10 shrink-0 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition">
+                                <button type="button" data-action="shiftRange" data-arg="-1" aria-label="טווח קודם" data-tip="טווח קודם" class="nudge-prev tap-44 w-10 h-10 shrink-0 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
                                 </button>
                                 <span id="analyticsRangeLabel" aria-live="polite" class="flex-1 px-1 text-sm font-bold text-slate-800 dark:text-slate-100 whitespace-nowrap sm:min-w-[8.5rem] text-center"></span>
-                                <button type="button" id="analyticsNextRangeBtn" data-action="shiftRange" data-arg="1" aria-label="טווח הבא" title="טווח הבא" class="nudge-next tap-44 w-10 h-10 shrink-0 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent">
+                                <button type="button" id="analyticsNextRangeBtn" data-action="shiftRange" data-arg="1" aria-label="טווח הבא" data-tip="טווח הבא" class="nudge-next tap-44 w-10 h-10 shrink-0 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-transparent">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>
                                 </button>
                             </div>
@@ -413,7 +413,7 @@
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
                         <div class="relative">
-                            <button type="button" data-action="toggleMenu" data-arg="manageHeaderMenu" aria-haspopup="menu" aria-expanded="false" aria-label="אפשרויות נוספות" title="אפשרויות נוספות" class="w-11 h-11 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition">
+                            <button type="button" data-action="toggleMenu" data-arg="manageHeaderMenu" aria-haspopup="menu" aria-expanded="false" aria-label="אפשרויות נוספות" data-tip="אפשרויות נוספות" class="w-11 h-11 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition">
                                 <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
                             </button>
                             <div id="manageHeaderMenu" data-menu-panel role="menu" class="hidden absolute top-full mt-1.5 left-0 z-30 min-w-[13rem] p-1 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg">
@@ -430,7 +430,7 @@
                             </div>
                         </div>
                         <button type="button" id="manageSelectToggleBtn" data-action="toggleSelectMode" aria-pressed="false" class="h-11 px-3 sm:px-4 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 transition">בחירה</button>
-                        <button data-action="newHabit" aria-label="הרגל חדש" title="הרגל חדש" class="h-11 w-11 sm:w-auto sm:px-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm flex items-center justify-center gap-1.5 transition">
+                        <button data-action="newHabit" aria-label="הרגל חדש" data-tip="הרגל חדש" class="h-11 w-11 sm:w-auto sm:px-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm flex items-center justify-center gap-1.5 transition">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
                             <span class="hidden sm:inline">הרגל חדש</span>
                         </button>
@@ -443,7 +443,7 @@
                         <div id="manageCategoryFilterBar" class="flex items-center gap-1.5">
                             <!-- Populated via JS -->
                         </div>
-                        <button data-action="openCategories" title="ניהול קטגוריות" class="tap-44 h-10 px-3 rounded-xl text-xs font-semibold whitespace-nowrap bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 border border-dashed border-indigo-300 dark:border-indigo-800 transition flex items-center gap-1 shrink-0">
+                        <button data-action="openCategories" data-tip="ניהול קטגוריות" class="tap-44 h-10 px-3 rounded-xl text-xs font-semibold whitespace-nowrap bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 border border-dashed border-indigo-300 dark:border-indigo-800 transition flex items-center gap-1 shrink-0">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
                             <span>ניהול קטגוריות</span>
                         </button>
@@ -472,7 +472,7 @@
                         </div>
                         <button type="button" id="manageBulkArchiveBtn" data-action="bulkArchive" class="h-10 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-sm font-bold transition disabled:opacity-40 disabled:cursor-not-allowed">ארכיון</button>
                         <button type="button" id="manageBulkDeleteBtn" data-action="bulkDelete" class="h-10 px-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-sm font-bold transition disabled:opacity-40 disabled:cursor-not-allowed">מחיקה</button>
-                        <button type="button" data-action="exitSelectMode" aria-label="סיום בחירה" title="סיום בחירה" class="w-10 h-10 rounded-xl hover:bg-white/10 flex items-center justify-center text-slate-300 hover:text-white transition"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
+                        <button type="button" data-action="exitSelectMode" aria-label="סיום בחירה" data-tip="סיום בחירה" class="w-10 h-10 rounded-xl hover:bg-white/10 flex items-center justify-center text-slate-300 hover:text-white transition"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg></button>
                     </div>
                 </div>
         <!-- Drag & drop: category drop tray + floating ghost -->

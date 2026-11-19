@@ -22,7 +22,7 @@ export function applyThemeUI(dark) {
             'aria-label',
             app.isDarkMode ? 'מצב כהה פעיל. מעבר למצב בהיר' : 'מצב בהיר פעיל. מעבר למצב כהה'
         );
-        themeBtn.title = app.isDarkMode ? 'מעבר למצב בהיר' : 'מעבר למצב כהה';
+        themeBtn.dataset.tip = app.isDarkMode ? 'מעבר למצב בהיר' : 'מעבר למצב כהה';
     }
     const container = document.getElementById('themeIconContainer');
     if (container) {

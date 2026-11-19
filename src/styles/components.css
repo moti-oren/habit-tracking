@@ -273,7 +273,7 @@ html.dark .seg-pill--raised-strong {
 /* Tooltip */
 .app-tooltip {
     position: fixed;
-    z-index: 90;
+    z-index: 200;
     pointer-events: none;
     max-width: 240px;
     padding: 6px 10px;
